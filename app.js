@@ -1,5 +1,5 @@
-/* ห้องสอบ · หน้าเว็บ (ทำงานร่วมกับ Google Apps Script)
-   แก้ค่าด้านล่างนี้เพียงจุดเดียว: ใส่ที่อยู่ Web app ที่ได้จากการ Deploy */
+/* ห้องสอบ · หน้าเว็บ (ทำงานร่วมกับ Supabase Edge Function)
+   แก้ค่าด้านล่างนี้เพียงจุดเดียว: ใส่ที่อยู่ของ Edge Function */
 var API_URL = 'https://jrirkjpofliqxqtwhrzz.supabase.co/functions/v1/exam';
 
 (function () {
@@ -31,7 +31,9 @@ function msgOf(code) {
     no_exam: 'ไม่พบข้อสอบนี้ อาจถูกลบแล้ว',
     bad_no: 'เลขที่ต้องเป็นตัวเลข 1 ถึง 3 หลัก',
     bad_name: 'กรุณาใส่ชื่อ-สกุล',
-    unauthorized: 'รหัสผู้สอนไม่ถูกต้อง'
+    unauthorized: 'รหัสผู้สอนไม่ถูกต้อง',
+    not_live: 'ครูยังไม่เริ่มสอบ กรุณารอในห้องรอ',
+    ended: 'ข้อสอบนี้หมดเวลาแล้ว'
   };
   return m[code] || ('เกิดข้อผิดพลาด (' + code + ')');
 }
@@ -47,7 +49,7 @@ var S = {
   who: { name: '', no: '' },
   run: null, writing: false, again: false,
   examSel: null, detail: null, confirmReset: null, confirmDel: null, editing: null, editErr: null, saving: false,
-  away: false, awaySince: 0, lastBlock: {}, tm: null, retry: null
+  away: false, awaySince: 0, lastBlock: {}, tm: null, retry: null, lobby: null, starting: false
 };
 try { var j0 = JSON.parse(get('omr.who') || 'null'); if (j0 && typeof j0 === 'object') { S.who.name = String(j0.name || ''); S.who.no = String(j0.no || ''); } } catch (e) {}
 
@@ -117,6 +119,7 @@ async function poll() {
   if (!S.run && S.area === 'student' && S.step === 'list') { if (await loadStatus()) ch = true; }
   if (S.isTeacher) { if (await loadTeacher()) ch = true; }
   if (ch) refreshView();
+  checkLobby();
 }
 function refreshView() {
   if (!S.booted || S.fatal) return;
@@ -131,6 +134,7 @@ function refreshView() {
   if (S.area === 'live') { if (!document.getElementById('liveBody')) render(); else renderLiveParts(); }
   else if (S.area === 'exams') render();
   else if (S.area === 'student' && S.step === 'list' && whoOk()) {
+    if (S.lobby) { render(); return; }
     var l = document.getElementById('examList');
     if (l) l.innerHTML = examListHTML(); else render();
     updateIdGate();
@@ -146,7 +150,7 @@ async function boot() {
   if (S.token) { await loadTeacher(); if (S.isTeacher) { S.intro = false; S.area = 'exams'; } }
   S.booted = true;
   render();
-  setInterval(poll, 8000);
+  setInterval(poll, 4000);
   setInterval(function () { if (!S.run && S.area === 'live' && S.isTeacher && document.getElementById('liveBody')) renderLiveParts(); }, 5000);
 }
 
@@ -161,7 +165,8 @@ function render() {
   if (S.area === 'login') h += loginHTML();
   else if (S.area === 'live') h += liveHTML();
   else if (S.area === 'exams') h += S.editing ? editorHTML() : examsHTML();
-  else h += (S.step !== 'list' || !whoOk()) ? nameHTML() : homeHTML();
+  else if (S.step !== 'list' || !whoOk()) h += nameHTML();
+  else h += S.lobby ? lobbyHTML() : homeHTML();
   h += '</main>';
   app.innerHTML = h;
   if (S.area === 'live' && document.getElementById('liveBody')) renderLiveParts();
@@ -240,12 +245,49 @@ function examListHTML() {
     if (!e.open && !active) return;
     var n = (e.questions || []).length, st = '', btn = '';
     if (a && a.status === 'submitted') { st = '<span class="state done">ส่งแล้ว ' + clock(a.submittedAt) + '</span>'; btn = '<span class="state plain">ทำได้ครั้งเดียว</span>'; }
+    else if (a && a.status === 'waiting') {
+      if (e.liveAt) { st = '<span class="state doing">ครูเริ่มสอบแล้ว</span>'; btn = '<button class="btn accent" data-act="start" data-id="' + e.id + '" data-needid>เข้าสอบ</button>'; }
+      else { st = '<span class="state plain">อยู่ในห้องรอ</span>'; btn = '<button class="btn ghost" data-act="lobby" data-id="' + e.id + '" data-needid>กลับห้องรอ</button>'; }
+    }
     else if (active) { st = '<span class="state doing">กำลังทำค้างอยู่</span>'; btn = '<button class="btn accent" data-act="start" data-id="' + e.id + '" data-needid>ทำต่อ</button>'; }
-    else { btn = '<button class="btn accent" data-act="start" data-id="' + e.id + '" data-needid>เริ่มสอบ</button>'; }
+    else { btn = '<button class="btn accent" data-act="join" data-id="' + e.id + '" data-needid>เข้าห้องรอ</button>'; }
     out.push('<article class="excard"><h3>' + esc(e.title) + '</h3><div class="meta"><span>' + n + ' ข้อ</span><span>·</span><span>' + (e.minutes || 0) + ' นาที</span>' + (st ? '<span>·</span>' + st : '') + '</div>' + (e.proctor ? '<p class="rule">โหมดคุมสอบ: ระบบจะบันทึกเมื่อคุณออกจากหน้านี้</p>' : '') + '<footer>' + btn + '</footer></article>');
   });
   if (!out.length) return '<div class="empty">ยังไม่มีข้อสอบที่เปิดรับ เมื่อครูเปิดรับแล้ว รายการจะขึ้นที่นี่</div>';
   return out.join('');
+}
+/* ---------- student: waiting room ---------- */
+function lobbyHTML() {
+  var ex = S.exams[S.lobby];
+  if (!ex) { S.lobby = null; return homeHTML(); }
+  var head = '<div class="sumwho"><div><p class="kicker">ผู้สอบ</p><b class="sumname">' + esc(S.who.name) + ' · เลขที่ ' + esc(S.who.no) + '</b></div></div><h2 style="margin:10px 0 12px;font-size:19px">' + esc(ex.title) + '</h2>';
+  if (ex.liveAt) {
+    return head + '<section style="text-align:center;padding:30px 0"><p class="kicker">เริ่มสอบแล้ว</p><h1 style="margin:8px 0 6px">ครูเริ่มให้ทำข้อสอบได้แล้ว</h1><p class="muted" style="margin-bottom:18px">' + (ex.proctor ? 'กดปุ่มแล้วระบบจะเข้าสู่โหมดเต็มจอ' : 'กดปุ่มด้านล่างเพื่อเริ่มทำข้อสอบ') + '</p><button class="btn accent block" data-act="start" data-id="' + esc(ex.id) + '">เข้าสอบเลย</button></section>';
+  }
+  return head + '<section style="text-align:center;padding:40px 0"><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:var(--accent)" aria-hidden="true"></span><p class="kicker" style="margin-top:16px">อยู่ในห้องรอ</p><h1 style="margin:8px 0 6px">รอครูกดเริ่มสอบ</h1><p class="muted">หน้านี้จะเปลี่ยนให้เองเมื่อครูเริ่มสอบ ไม่ต้องรีเฟรช</p><div style="margin-top:24px"><button class="btn ghost" data-act="leavelobby">ออกจากห้องรอ</button></div></section>';
+}
+async function joinLobby(id) {
+  if (!whoOk()) return;
+  S.who.name = S.who.name.trim(); S.who.no = String(S.who.no).trim();
+  put('omr.who', JSON.stringify(S.who));
+  try {
+    var r = await api('join', { examId: id, no: S.who.no, name: S.who.name });
+    S.me[id] = r.attempt; S.meSig = '';
+    if (r.attempt && r.attempt.status === 'waiting') S.lobby = id;
+    render();
+  } catch (e) {
+    if (e.code === 'submitted' && e.attempt) { S.me[id] = e.attempt; S.meSig = ''; }
+    if (e.code === 'closed') await loadExams();
+    toast(msgOf(e.code)); render();
+  }
+}
+// เมื่อครูกดเริ่มสอบ ให้นักเรียนในห้องรอเข้าสอบเองโดยอัตโนมัติ
+async function checkLobby() {
+  if (!S.lobby || S.run || S.starting) return;
+  var ex = S.exams[S.lobby];
+  if (!ex || !ex.liveAt) return;
+  S.starting = true;
+  try { await startAttempt(S.lobby, false); } finally { S.starting = false; }
 }
 function updateIdGate() {
   var ok = whoOk();
@@ -260,7 +302,7 @@ function leaveCount(att) { var n = 0; (att.events || []).forEach(function (e) { 
 function examHTML() {
   var R = S.run, att = R.att, ex = S.exams[R.examId];
   var veil = '';
-  if (R.needFs) veil = '<div class="veil"><div class="panel"><h2>กลับเข้าโหมดเต็มจอ</h2><p class="muted">ระบบบันทึกว่าคุณออกจากโหมดเต็มจอแล้ว แตะปุ่มเพื่อทำข้อสอบต่อ</p><button class="btn accent block" data-act="fsback">กลับเข้าโหมดเต็มจอ</button></div></div>';
+  if (R.needFs) veil = '<div class="veil"><div class="panel"><h2>กลับเข้าโหมดเต็มจอ</h2><p class="muted">ข้อสอบนี้ต้องทำในโหมดเต็มจอ แตะปุ่มด้านล่างเพื่อทำข้อสอบต่อ</p><button class="btn accent block" data-act="fsback">กลับเข้าโหมดเต็มจอ</button></div></div>';
   var quit = R.preview ? '<button class="btn ghost sm" data-act="exitpreview">ออกจากการดูตัวอย่าง</button>' : '';
   var bar = '<header class="xbar"><div class="xbar-in"><div class="xt"><strong>' + esc(att.title) + '</strong><span>' + (R.preview ? 'ดูตัวอย่าง ไม่มีการบันทึกผล' : 'เลขที่ ' + esc(S.who.no) + ' · ' + esc(S.who.name)) + '</span></div><span class="timer" id="tmr" aria-live="off">--</span></div></header>';
   var sub = '<div class="xsub"><span id="sv"></span>' + (att.proctor && !R.preview ? '<span>ออกจากหน้าสอบแล้ว <b id="lvc">' + leaveCount(att) + '</b> ครั้ง</span>' : '') + quit + '</div>';
@@ -351,9 +393,11 @@ async function startAttempt(id, preview) {
     try {
       var r = await api('start', { examId: id, no: S.who.no, name: S.who.name });
       att = r.attempt;
+      S.lobby = null;
     } catch (e) {
       if (e.code === 'submitted' && e.attempt) { S.me[id] = e.attempt; S.meSig = ''; }
       if (e.code === 'closed') await loadExams();
+      if (e.code === 'ended') S.lobby = null;
       toast(msgOf(e.code));
       render();
       return;
@@ -364,7 +408,11 @@ async function startAttempt(id, preview) {
   S.run = { examId: id, att: att, cur: 0, review: false, fs: false, needFs: false, notice: null, saveState: 'saved', sig: String(ex.updatedAt), preview: !!preview };
   S.away = false;
   render();
-  var fs = await fsP; if (S.run && S.run.examId === id) S.run.fs = !!fs;
+  var fs = await fsP;
+  if (S.run && S.run.examId === id) {
+    S.run.fs = !!fs;
+    if (!fs && ex.proctor && !preview) { S.run.needFs = true; render(); }
+  }
   if (!preview && Date.now() >= att.endAt) submitExam('timeout');
 }
 
@@ -480,6 +528,7 @@ function scoreOf(att, ex, key) {
   return { s: s, max: max };
 }
 function statusChip(att, as) {
+  if (att.status === 'waiting') return '<span class="state plain">ในห้องรอ</span>';
   if (att.status === 'submitted') return '<span class="state done">ส่งแล้ว</span>';
   if (att.status === 'away') return '<span class="state away">ออกจากหน้าสอบ' + (as && as.ongoing ? ' ' + dur(Date.now() - as.since) : '') + '</span>';
   return '<span class="state doing">กำลังทำ</span>';
@@ -504,24 +553,24 @@ function liveHTML() {
   if (!S.examSel || !S.exams[S.examSel]) S.examSel = ex[0].id;
   var opts = ex.map(function (e) { return '<option value="' + e.id + '"' + (e.id === S.examSel ? ' selected' : '') + '>' + esc(e.title) + (e.open ? '' : ' (ปิดรับอยู่)') + '</option>'; }).join('');
   return '<div class="head"><div><p class="kicker">ผลสด</p><h1 style="margin-top:6px">ติดตามการทำข้อสอบ</h1><p>อัปเดตเองอัตโนมัติ แตะชื่อเพื่อดูบันทึกเวลาของนักเรียนคนนั้น</p></div><button class="btn ghost sm" data-act="csv">ส่งออก CSV</button></div>' +
-    '<div class="toolbar"><label class="field"><span>ข้อสอบ</span><select id="sel-exam">' + opts + '</select></label></div>' +
+    '<div class="toolbar"><label class="field"><span>ข้อสอบ</span><select id="sel-exam">' + opts + '</select></label><button class="btn sm" data-act="golive" data-id="' + S.examSel + '" data-v="' + (S.exams[S.examSel].liveAt ? '0' : '1') + '">' + (S.exams[S.examSel].liveAt ? 'จบการสอบพร้อมกัน' : 'เริ่มสอบพร้อมกัน') + '</button></div>' +
     '<div class="sumrow" id="liveSum"></div><div class="tablewrap"><table class="tbl"><thead><tr><th>เลขที่</th><th>ชื่อ-สกุล</th><th>สถานะ</th><th>ตอบแล้ว</th><th>ออกจากหน้าสอบ</th><th>เริ่ม</th><th>ส่งเมื่อ</th><th>คะแนน</th></tr></thead><tbody id="liveBody"></tbody></table></div><div id="liveDetail"></div>';
 }
 function renderLiveParts() {
   var body = document.getElementById('liveBody'); if (!body) return;
   var ex = S.exams[S.examSel], key = S.keys[S.examSel], rows = roster(), now = Date.now();
-  var c = { all: rows.length, doing: 0, away: 0, done: 0, flag: 0 };
+  var c = { all: rows.length, doing: 0, away: 0, done: 0, flag: 0, wait: 0 };
   var html = rows.map(function (r) {
     var as = awayStats(r.att, now);
-    if (r.att.status === 'submitted') c.done++; else if (r.att.status === 'away') c.away++; else c.doing++;
+    if (r.att.status === 'submitted') c.done++; else if (r.att.status === 'away') c.away++; else if (r.att.status === 'waiting') c.wait++; else c.doing++;
     if (as.n > 0) c.flag++;
     var total = ex ? (ex.questions || []).length : 0, ans = ex ? (ex.questions || []).filter(function (q) { return r.att.answers && r.att.answers[q.id] !== undefined; }).length : 0;
     var sc = r.att.status === 'submitted' ? scoreOf(r.att, ex, key) : null;
     var awayTxt = as.n ? '<span class="state ' + (as.n >= 3 ? 'bad' : 'away') + '">' + as.n + ' ครั้ง · รวม ' + dur(as.ms) + '</span>' : '<span class="muted">ไม่มี</span>';
-    return '<tr data-act="detail" data-uid="' + esc(r.uid) + '"' + (S.detail === r.uid ? ' class="sel"' : '') + '><td data-label="เลขที่">' + (r.no || '-') + '</td><td class="wide" data-label="ชื่อ-สกุล"><button class="linkbtn" data-act="detail" data-uid="' + esc(r.uid) + '">' + esc(r.name) + '</button></td><td data-label="สถานะ">' + statusChip(r.att, as) + '</td><td data-label="ตอบแล้ว">' + ans + ' / ' + total + '</td><td data-label="ออกจากหน้าสอบ">' + awayTxt + '</td><td data-label="เริ่ม">' + clock(r.att.startedAt) + '</td><td data-label="ส่งเมื่อ">' + (r.att.submittedAt ? clock(r.att.submittedAt) : '—') + '</td><td data-label="คะแนน">' + (sc ? '<b>' + sc.s + '</b> / ' + sc.max : '—') + '</td></tr>';
+    return '<tr data-act="detail" data-uid="' + esc(r.uid) + '"' + (S.detail === r.uid ? ' class="sel"' : '') + '><td data-label="เลขที่">' + (r.no || '-') + '</td><td class="wide" data-label="ชื่อ-สกุล"><button class="linkbtn" data-act="detail" data-uid="' + esc(r.uid) + '">' + esc(r.name) + '</button></td><td data-label="สถานะ">' + statusChip(r.att, as) + '</td><td data-label="ตอบแล้ว">' + ans + ' / ' + total + '</td><td data-label="ออกจากหน้าสอบ">' + awayTxt + '</td><td data-label="เริ่ม">' + (r.att.startedAt ? clock(r.att.startedAt) : '—') + '</td><td data-label="ส่งเมื่อ">' + (r.att.submittedAt ? clock(r.att.submittedAt) : '—') + '</td><td data-label="คะแนน">' + (sc ? '<b>' + sc.s + '</b> / ' + sc.max : '—') + '</td></tr>';
   }).join('');
   body.innerHTML = html || '<tr><td colspan="8" class="muted" style="padding:30px 0">ยังไม่มีนักเรียนเริ่มทำข้อสอบนี้</td></tr>';
-  document.getElementById('liveSum').innerHTML = [['ทั้งหมด', c.all], ['กำลังทำ', c.doing], ['ออกจากหน้าสอบอยู่', c.away], ['ส่งแล้ว', c.done], ['เคยออกจากหน้าสอบ', c.flag]].map(function (x) { return '<div class="sum"><b>' + x[1] + '</b><span>' + x[0] + '</span></div>'; }).join('');
+  document.getElementById('liveSum').innerHTML = [['ทั้งหมด', c.all], ['ในห้องรอ', c.wait], ['กำลังทำ', c.doing], ['ออกจากหน้าสอบอยู่', c.away], ['ส่งแล้ว', c.done], ['เคยออกจากหน้าสอบ', c.flag]].map(function (x) { return '<div class="sum"><b>' + x[1] + '</b><span>' + x[0] + '</span></div>'; }).join('');
   var dv = document.getElementById('liveDetail'); if (dv) dv.innerHTML = S.detail ? detailHTML(S.detail, now) : '';
 }
 function evLabel(e) {
@@ -555,7 +604,7 @@ function detailHTML(uid, now) {
     }).join('');
   }
   var rst = S.confirmReset === uid ? '<button class="btn danger sm" data-act="resetyes" data-uid="' + esc(uid) + '">ยืนยันล้างผล</button><button class="btn ghost sm" data-act="resetno">ยกเลิก</button>' : '<button class="btn ghost sm" data-act="reset" data-uid="' + esc(uid) + '">ให้ทำใหม่</button>';
-  return '<section class="detail"><div class="dhead"><div><p class="kicker">รายละเอียด</p><h2 style="margin-top:6px">' + esc(a.name) + ' · เลขที่ ' + esc(a.no) + '</h2><p class="muted small" style="margin-top:4px">เริ่มเมื่อ ' + fmtDay(a.startedAt) + ' · ใช้เวลา ' + (a.endAt ? dur(a.endAt - a.startedAt) : '-') + '</p></div><div class="row" style="gap:10px;align-items:center">' + statusChip(a, as) + (sc ? '<span class="tag">คะแนน ' + sc.s + ' / ' + sc.max + '</span>' : '') + rst + '<button class="btn ghost sm" data-act="closedetail">ปิด</button></div></div>' +
+  return '<section class="detail"><div class="dhead"><div><p class="kicker">รายละเอียด</p><h2 style="margin-top:6px">' + esc(a.name) + ' · เลขที่ ' + esc(a.no) + '</h2><p class="muted small" style="margin-top:4px">' + (a.startedAt ? 'เริ่มเมื่อ ' + fmtDay(a.startedAt) : 'ยังอยู่ในห้องรอ') + ' · ใช้เวลา ' + (a.endAt ? dur(a.endAt - a.startedAt) : '-') + '</p></div><div class="row" style="gap:10px;align-items:center">' + statusChip(a, as) + (sc ? '<span class="tag">คะแนน ' + sc.s + ' / ' + sc.max + '</span>' : '') + rst + '<button class="btn ghost sm" data-act="closedetail">ปิด</button></div></div>' +
     '<div class="dgrid"><div><h3 style="margin-bottom:8px">บันทึกเวลา</h3><p class="small muted" style="margin-bottom:10px">ออกจากหน้าสอบ ' + as.n + ' ครั้ง รวม ' + dur(as.ms) + '</p><ol class="tl">' + (tl || '<li>ยังไม่มีบันทึก</li>') + '</ol></div>' +
     '<div><h3 style="margin-bottom:8px">คำตอบรายข้อ</h3><div class="strip">' + strip + '</div><div class="legend"><span><i style="background:var(--ok)"></i>ตอบถูก</span><span><i style="background:var(--bad)"></i>ตอบผิด</span><span><i></i>ไม่ได้ตอบ</span></div></div></div></section>';
 }
@@ -576,7 +625,7 @@ function exportCsv() {
   rows.forEach(function (r) {
     var as = awayStats(r.att, now), sc = r.att.status === 'submitted' ? scoreOf(r.att, ex, key) : null;
     var ans = ex ? (ex.questions || []).filter(function (x) { return r.att.answers && r.att.answers[x.id] !== undefined; }).length : '';
-    lines.push([r.no, r.name, r.att.status === 'submitted' ? 'ส่งแล้ว' : r.att.status === 'away' ? 'ออกจากหน้าสอบอยู่' : 'กำลังทำ', ans, as.n, Math.round(as.ms / 1000), fmtDay(r.att.startedAt), r.att.submittedAt ? fmtDay(r.att.submittedAt) : '', sc ? sc.s : '', sc ? sc.max : ''].map(q).join(','));
+    lines.push([r.no, r.name, r.att.status === 'submitted' ? 'ส่งแล้ว' : r.att.status === 'away' ? 'ออกจากหน้าสอบอยู่' : r.att.status === 'waiting' ? 'ในห้องรอ' : 'กำลังทำ', ans, as.n, Math.round(as.ms / 1000), r.att.startedAt ? fmtDay(r.att.startedAt) : '', r.att.submittedAt ? fmtDay(r.att.submittedAt) : '', sc ? sc.s : '', sc ? sc.max : ''].map(q).join(','));
   });
   try {
     var blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
@@ -595,7 +644,7 @@ function examsHTML() {
   var list = ex.map(function (e) {
     var n = (e.questions || []).length;
     var del = S.confirmDel === e.id ? '<button class="btn danger sm" data-act="delyes" data-id="' + e.id + '">ยืนยันลบ</button><button class="btn ghost sm" data-act="delno">ยกเลิก</button>' : '<button class="btn ghost sm" data-act="del" data-id="' + e.id + '">ลบ</button>';
-    return '<article class="exrow"><div class="exinfo"><h3>' + esc(e.title) + '</h3><div class="exmeta"><span class="state ' + (e.open ? 'done' : 'plain') + '">' + (e.open ? 'เปิดรับอยู่' : 'ปิดรับอยู่') + '</span><span>·</span><span>' + n + ' ข้อ</span><span>·</span><span>' + (e.minutes || 0) + ' นาที</span>' + (e.proctor ? '<span>·</span><span>โหมดคุมสอบ</span>' : '') + (e.shuffle ? '<span>·</span><span>สลับข้อ</span>' : '') + '</div></div><div class="exact"><button class="btn sm" data-act="toggleopen" data-id="' + e.id + '">' + (e.open ? 'ปิดรับ' : 'เปิดรับ') + '</button><button class="btn ghost sm" data-act="edit" data-id="' + e.id + '">แก้ไข</button><button class="btn ghost sm" data-act="preview" data-id="' + e.id + '">ดูตัวอย่าง</button><button class="btn ghost sm" data-act="track" data-id="' + e.id + '">ผลสด</button>' + del + '</div></article>';
+    return '<article class="exrow"><div class="exinfo"><h3>' + esc(e.title) + '</h3><div class="exmeta"><span class="state ' + (e.open ? 'done' : 'plain') + '">' + (e.open ? 'เปิดรับอยู่' : 'ปิดรับอยู่') + '</span><span>·</span><span>' + n + ' ข้อ</span><span>·</span><span>' + (e.minutes || 0) + ' นาที</span>' + (e.proctor ? '<span>·</span><span>โหมดคุมสอบ</span>' : '') + (e.shuffle ? '<span>·</span><span>สลับข้อ</span>' : '') + '</div></div><div class="exact"><button class="btn sm" data-act="golive" data-id="' + e.id + '" data-v="' + (e.liveAt ? '0' : '1') + '">' + (e.liveAt ? 'จบการสอบพร้อมกัน' : 'เริ่มสอบพร้อมกัน') + '</button><button class="btn sm" data-act="toggleopen" data-id="' + e.id + '">' + (e.open ? 'ปิดรับ' : 'เปิดรับ') + '</button><button class="btn ghost sm" data-act="edit" data-id="' + e.id + '">แก้ไข</button><button class="btn ghost sm" data-act="preview" data-id="' + e.id + '">ดูตัวอย่าง</button><button class="btn ghost sm" data-act="track" data-id="' + e.id + '">ผลสด</button>' + del + '</div></article>';
   }).join('');
   return '<div class="head"><div><p class="kicker">ข้อสอบ</p><h1 style="margin-top:6px">รายการข้อสอบ</h1><p>แก้ไขได้ตลอด นักเรียนที่เปิดหน้าอยู่จะเห็นการเปลี่ยนแปลงภายในไม่กี่วินาที</p></div><button class="btn accent" data-act="newexam">สร้างข้อสอบ</button></div>' + (list ? '<div class="exlist2">' + list + '</div>' : '<div class="empty">ยังไม่มีข้อสอบ กด “สร้างข้อสอบ” เพื่อเริ่มต้น</div>');
 }
@@ -675,6 +724,13 @@ async function toggleOpen(id) {
     toast(cur.open ? 'ปิดรับแล้ว' : 'เปิดรับแล้ว นักเรียนเห็นทันที');
   } catch (e) { toast('เปลี่ยนสถานะไม่สำเร็จ'); }
 }
+async function setLive(id, on) {
+  try {
+    await api('teacher', { op: 'setLive', token: S.token, examId: id, live: on });
+    S.examsSig = ''; await loadExams(); render();
+    toast(on ? 'เริ่มสอบแล้ว นักเรียนในห้องรอจะเข้าสอบได้ทันที' : 'ยกเลิกการเริ่มสอบพร้อมกันแล้ว');
+  } catch (e) { toast(e.code === 'unauthorized' ? 'รหัสผู้สอนไม่ถูกต้อง' : 'ทำรายการไม่สำเร็จ ลองอีกครั้ง'); }
+}
 async function teacherLogin() {
   var el = document.getElementById('f-token'); var t = el ? el.value.trim() : '';
   if (!t) { S.loginErr = 'กรุณาใส่รหัสผู้สอน'; render(); return; }
@@ -699,13 +755,17 @@ function act(a, b) {
   switch (a) {
     case 'area': if (S.editing) return; if (S.run && S.run.att.status === 'submitted') endRun(); S.area = b.getAttribute('data-v'); S.detail = null; render(); break;
     case 'start': startAttempt(id, false); break;
+    case 'join': joinLobby(id); break;
+    case 'lobby': S.lobby = id; render(); break;
+    case 'leavelobby': S.lobby = null; render(); break;
+    case 'golive': setLive(id, b.getAttribute('data-v') === '1'); break;
     case 'preview': startAttempt(id, true); break;
     case 'track': S.examSel = id; S.detail = null; S.area = 'live'; render(); break;
     case 'exitpreview': endRun(); render(); break;
     case 'tolist':
       if (whoOk()) { S.step = 'list'; render(); loadStatus().then(function (c) { if (c) refreshView(); }); }
       break;
-    case 'editname': S.step = 'name'; render(); break;
+    case 'editname': S.step = 'name'; S.lobby = null; render(); break;
     case 'skipintro': finishIntro(); break;
     case 'home': endRun(); render(); loadStatus().then(function (c) { if (c) refreshView(); }); break;
     case 'goto': R.cur = +b.getAttribute('data-i'); R.review = false; render(); window.scrollTo(0, 0); break;
