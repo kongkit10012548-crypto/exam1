@@ -1,6 +1,6 @@
 /* ห้องสอบ · หน้าเว็บ (ทำงานร่วมกับ Google Apps Script)
    แก้ค่าด้านล่างนี้เพียงจุดเดียว: ใส่ที่อยู่ Web app ที่ได้จากการ Deploy */
-var API_URL = 'https://script.google.com/macros/s/AKfycbzuZl2Cho-2HFZCH5h-dT1YBu7Srif6JUzsG3V0bVzEeUiPQIgQP0YmExfJdj4C37ZGkQ/exec';
+var API_URL = 'https://jrirkjpofliqxqtwhrzz.supabase.co/functions/v1/exam';
 
 (function () {
 'use strict';
