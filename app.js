@@ -135,9 +135,7 @@ function refreshView() {
   else if (S.area === 'exams') render();
   else if (S.area === 'student' && S.step === 'list' && whoOk()) {
     if (S.lobby) { render(); return; }
-    var l = document.getElementById('examList');
-    if (l) l.innerHTML = examListHTML(); else render();
-    updateIdGate();
+    render();
   }
 }
 
@@ -157,49 +155,88 @@ async function boot() {
 /* ---------- rendering ---------- */
 function render() {
   if (S.fatal) { app.innerHTML = fatalHTML(); return; }
-  if (!S.booted) { app.innerHTML = headerHTML(true) + '<main class="page"><p class="muted" style="padding:60px 0">กำลังเชื่อมต่อ…</p></main>'; return; }
+  if (!S.booted) { app.innerHTML = '<div class="boot">' + IC.cap + '<p class="muted">กำลังเชื่อมต่อ…</p></div>'; return; }
   if (S.run) { app.innerHTML = S.run.att.status === 'submitted' ? doneHTML() : examHTML(); if (S.run.att.status !== 'submitted') afterExam(); return; }
   if (S.intro && S.area === 'student') { app.innerHTML = introHTML(); startIntro(); return; }
-  var h = headerHTML() + '<main class="page">';
+  var h = '';
   if (S.err) h += '<div class="notice bad" style="margin-bottom:16px">' + esc(msgOf(S.err)) + '</div>';
   if (S.area === 'login') h += loginHTML();
   else if (S.area === 'live') h += liveHTML();
   else if (S.area === 'exams') h += S.editing ? editorHTML() : examsHTML();
   else if (S.step !== 'list' || !whoOk()) h += nameHTML();
   else h += S.lobby ? lobbyHTML() : homeHTML();
-  h += '</main>';
-  app.innerHTML = h;
+  app.innerHTML = shellHTML(h);
   if (S.area === 'live' && document.getElementById('liveBody')) renderLiveParts();
   if (S.area === 'student') updateIdGate();
 }
 function fatalHTML() {
-  return headerHTML(true) + '<main class="page"><div class="empty" style="margin-top:24px"><h2 style="color:var(--ink);margin-bottom:8px">ยังไม่สามารถเข้าระบบสอบได้</h2><p>' + msgOf(S.fatal) + '</p></div></main>';
+  return shellHTML('<section class="card" style="max-width:560px"><h2 style="margin-bottom:8px">ยังไม่สามารถเข้าระบบสอบได้</h2><p class="muted">' + msgOf(S.fatal) + '</p></section>', true);
 }
-function headerHTML(plain) {
-  var role = S.isTeacher ? 'ผู้สอน' : 'นักเรียน';
-  var nav = '';
-  if (S.isTeacher && !plain) {
-    var dis = S.editing ? ' disabled' : '';
-    var tb = function (v, l) { return '<button class="tab" data-act="area" data-v="' + v + '"' + (S.area === v ? ' aria-current="page"' : '') + dis + '>' + l + '</button>'; };
-    nav = '<nav class="tabbar" aria-label="เมนูผู้สอน">' + tb('exams', 'ข้อสอบ') + tb('live', 'ผลสด') + tb('student', 'หน้านักเรียน') + '</nav>';
+var NI = {
+  home: '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3 2.5 11h2.8v9.5h5.2v-6h3v6h5.2V11h2.8z"/></svg>',
+  book: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5C4 4.7 4.7 4 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5zM20 5.5c0-.8-.7-1.5-1.5-1.5H13v16h5.5c.8 0 1.5-.7 1.5-1.5z"/></svg>',
+  chart: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>',
+  users: '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="8" r="3.6"/><circle cx="17" cy="9" r="2.8"/><path d="M2 20c0-3.6 3.1-6 7-6s7 2.4 7 6zM15.5 14.2c3.4-.4 6.5 1.6 6.5 5.8h-4.5c0-2.3-.7-4.3-2-5.8z"/></svg>',
+  key: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3M14 9l2 2"/></svg>',
+  out: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H3"/></svg>',
+  plus: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
+  play: '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l12.5-7.5z"/></svg>',
+  doc: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3" y="5" width="14" height="14" rx="2.5"/><path d="M18 9.5 22 7v10l-4-2.5z"/></svg>',
+  trophy: '<svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 3h10v2h3v3a4 4 0 0 1-4 4h-.3A5 5 0 0 1 13 14.9V18h3v3H8v-3h3v-3.1A5 5 0 0 1 8.3 12H8a4 4 0 0 1-4-4V5h3zm0 4H6v1a2 2 0 0 0 1 1.7zm10 0v2.7A2 2 0 0 0 18 8V7z"/></svg>',
+  star: '<svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.9 6.3 6.9.7-5.2 4.6 1.5 6.8L12 17l-6.1 3.4 1.5-6.8L2.2 9l6.9-.7z"/></svg>',
+  cal: '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 2h2v2h6V2h2v2h2.5A1.5 1.5 0 0 1 21 5.5v14a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 19.5v-14A1.5 1.5 0 0 1 4.5 4H7zM5 9v10h14V9zm2 2h2v2H7zm4 0h2v2h-2zm4 0h2v2h-2zm-8 4h2v2H7zm4 0h2v2h-2z"/></svg>',
+  arrow: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>'
+};
+function leafArt() {
+  return '<svg class="leaf" viewBox="0 0 200 200" aria-hidden="true"><path d="M20 200C10 140 30 90 80 70c-10 40-12 90-30 130z" fill="#BFE6CC"/><path d="M60 200c0-60 30-100 90-110-25 30-40 70-50 110z" fill="#9ED9B3"/><path d="M0 200c10-30 30-50 60-55-15 20-22 38-25 55z" fill="#D6F0DF"/></svg>';
+}
+function shellHTML(inner, plain) {
+  var items = '';
+  var it = function (act, v, icon, label, cur, extra) { return '<button class="snav' + (cur ? ' on' : '') + '" data-act="' + act + '"' + (v ? ' data-v="' + v + '"' : '') + (cur ? ' aria-current="page"' : '') + (extra || '') + '>' + icon + '<span>' + label + '</span></button>'; };
+  if (!plain) {
+    if (S.isTeacher) {
+      var dis = S.editing ? ' disabled' : '';
+      items = it('area', 'exams', NI.home, 'ข้อสอบ', S.area === 'exams', dis) + it('area', 'live', NI.chart, 'ผลสด', S.area === 'live', dis) + it('area', 'student', NI.users, 'หน้านักเรียน', S.area === 'student', dis) +
+        '<span class="snav-gap"></span>' + it('logout', '', NI.out, 'ออกจากระบบ');
+    } else {
+      items = it('home', '', NI.home, 'หน้าหลัก', S.area === 'student') + it('teacherlogin', '', NI.key, 'สำหรับผู้สอน', S.area === 'login');
+    }
   }
-  var side = plain ? '' : (S.isTeacher
-    ? '<button class="linkbtn small" data-act="logout">ออกจากโหมดผู้สอน</button>'
-    : '<button class="linkbtn small" data-act="teacherlogin">สำหรับผู้สอน</button>');
-  return '<header class="topbar"><div class="topbar-in"><div class="brand"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="align-self:center;flex:none"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg><b>ห้องสอบ</b><span>ระบบสอบออนไลน์</span></div><div class="hdr-r"><span class="role">' + role + '</span>' + side + '</div></div></header>' + nav;
+  var side = '<aside class="side"><div class="side-logo">' + IC.cap + '<b>ห้องสอบ</b><span>ระบบสอบออนไลน์</span></div><nav class="side-nav" aria-label="เมนูหลัก">' + items + '</nav>' + leafArt() + '</aside>';
+  var tabs = '';
+  if (S.isTeacher && !plain) {
+    var d2 = S.editing ? ' disabled' : '';
+    var tb = function (v, icon, l) { return '<button class="tab" data-act="area" data-v="' + v + '"' + (S.area === v ? ' aria-current="page"' : '') + d2 + '>' + icon + '<span>' + l + '</span></button>'; };
+    tabs = '<nav class="tabbar" aria-label="เมนูผู้สอน">' + tb('exams', NI.home, 'ข้อสอบ') + tb('live', NI.chart, 'ผลสด') + tb('student', NI.users, 'นักเรียน') + '</nav>';
+  }
+  var who = S.isTeacher ? '<b>ผู้สอน</b><span>โหมดจัดการข้อสอบ</span>' : (whoOk() && S.step === 'list' ? '<b>' + esc(S.who.name) + '</b><span>เลขที่ ' + esc(S.who.no) + '</span>' : '<b>นักเรียน</b><span>ยังไม่ได้ลงชื่อ</span>');
+  var act = plain ? '' : (S.isTeacher ? '<button class="pillbtn" data-act="logout">' + NI.out + '<span>ออก</span></button>' : (S.area === 'login' ? '' : '<button class="pillbtn" data-act="teacherlogin">' + NI.key + '<span>สำหรับผู้สอน</span></button>'));
+  var top = '<header class="topbar"><div class="tb-brand">' + IC.cap + '<b>ห้องสอบ</b></div><div class="tb-hello"><span>ระบบสอบออนไลน์</span><b>' + (S.isTeacher ? 'แผงควบคุมผู้สอน' : 'ยินดีต้อนรับสู่ห้องสอบ') + '</b></div><div class="tb-r">' + act + '<span class="tb-who"><span class="tb-av">' + IC.user + '</span><span class="tb-wt">' + who + '</span></span></div></header>';
+  return '<div class="shell">' + side + '<div class="shell-main">' + top + '<main class="page">' + inner + '</main></div></div>' + tabs;
 }
+function headerHTML() { return ''; }
 
-/* ---------- intro countdown, name step, chart art ---------- */
+/* ---------- intro countdown, name step, art ---------- */
 function ringOff(n) { return (339.292 * (1 - n / 5)).toFixed(1); }
-function chartSVG() {
-  var cs = [[20,120,100,126,96],[52,100,112,116,92],[84,112,96,118,92],[116,96,78,100,74],[148,78,88,92,74],[180,88,64,90,60],[212,64,70,74,58],[244,70,46,72,42],[276,46,34,48,30]];
-  var bars = cs.map(function (c) { var up = c[2] < c[1], top = Math.min(c[1], c[2]), h = Math.max(2, Math.abs(c[1] - c[2])); var col = up ? '#34D399' : '#F2C25C'; return '<path d="M' + (c[0] + 6) + ' ' + c[4] + 'V' + c[3] + '" stroke="' + col + '" stroke-width="2"/><rect x="' + c[0] + '" y="' + top + '" width="12" height="' + h + '" fill="' + col + '"/>'; }).join('');
-  return '<svg class="art" viewBox="0 0 320 170" role="img" aria-label="กราฟแท่งเทียนที่ปรับตัวขึ้น"><g stroke="rgba(127,140,160,.22)" stroke-width="1"><path d="M0 40H320M0 85H320M0 130H320"/></g>' + bars + '<polyline points="20,140 60,118 100,124 140,96 180,88 220,62 260,50 296,26" fill="none" stroke="#F2C25C" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/><circle cx="300" cy="22" r="13" fill="#F2C25C"/><text x="300" y="27" text-anchor="middle" font-size="14" font-weight="700" fill="#0A1628">฿</text></svg>';
+function heroArt() {
+  return '<svg class="hero-art" viewBox="0 0 460 260" role="img" aria-label="ภาพประกอบแล็ปท็อป หนังสือ และกราฟ">' +
+    '<defs><linearGradient id="hg1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#CDEFD9"/><stop offset="1" stop-color="#7FCF9B"/></linearGradient><linearGradient id="hg2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2F4A63"/><stop offset="1" stop-color="#16293D"/></linearGradient><linearGradient id="hg3" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5BC0FF"/><stop offset="1" stop-color="#2E7BEA"/></linearGradient></defs>' +
+    '<path d="M0 230c80-40 160-50 240-30s150 10 220-20v80H0z" fill="url(#hg1)"/><path d="M0 250c90-25 200-30 300-10s120 5 160-5v25H0z" fill="#9ED9B3"/>' +
+    '<ellipse cx="250" cy="226" rx="150" ry="14" fill="#5FAF7B" opacity=".35"/>' +
+    '<g transform="rotate(-8 250 140)"><rect x="170" y="52" width="170" height="118" rx="10" fill="#C9D3DC"/><rect x="178" y="60" width="154" height="102" rx="6" fill="url(#hg2)"/><path d="M255 92l30 13-30 13-30-13z" fill="#7CC3FF"/><path d="M237 110v12c0 5 8 9 18 9s18-4 18-9v-12l-18 8z" fill="url(#hg3)"/><circle cx="276" cy="127" r="9" fill="#F3C24E"/><path d="M273 122.5v9l7.5-4.5z" fill="#fff"/></g>' +
+    '<path d="M142 190l200-28 26 16-210 32z" fill="#DCE3E9"/><path d="M158 210l210-32v6l-208 32z" fill="#AEB9C3"/>' +
+    '<g><rect x="345" y="186" width="96" height="16" rx="3" fill="#2E7BEA"/><rect x="350" y="170" width="88" height="16" rx="3" fill="#F6F1E6" stroke="#E0D6C0"/><rect x="340" y="154" width="92" height="16" rx="3" fill="#2FA866"/><rect x="352" y="138" width="80" height="16" rx="3" fill="#F6F1E6" stroke="#E0D6C0"/></g>' +
+    '<g><rect x="112" y="120" width="40" height="72" rx="8" fill="#2FA866"/><path d="M120 120l-4-38M132 120l2-44M144 120l8-34" stroke-width="5" stroke-linecap="round" stroke="#1F2937"/><circle cx="116" cy="80" r="4" fill="#F3C24E"/><circle cx="134" cy="74" r="4" fill="#E2584D"/></g>' +
+    '<g><rect x="370" y="20" width="62" height="56" rx="12" fill="#fff" opacity=".9"/><path d="M382 64l12-14 10 8 16-20" fill="none" stroke="#2FA866" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><rect x="384" y="58" width="5" height="10" rx="1" fill="#2E7BEA"/><rect x="394" y="54" width="5" height="14" rx="1" fill="#2E7BEA"/></g>' +
+    '<g><rect x="372" y="90" width="48" height="44" rx="11" fill="#fff" opacity=".92"/><circle cx="396" cy="112" r="13" fill="#2FA866"/><path d="M392 105v14l11-7z" fill="#fff"/></g>' +
+    '<g opacity=".9"><circle cx="40" cy="70" r="26" fill="#fff"/><text x="40" y="79" text-anchor="middle" font-size="26" font-weight="700" fill="#2FA866" font-family="Sarabun,sans-serif">฿</text></g>' +
+    '</svg>';
 }
+function chartSVG() { return heroArt(); }
 function introHTML() {
-  return '<section class="intro"><div class="intro-in"><p class="intro-kicker">ระบบสอบออนไลน์ · การเงินและการลงทุน</p><h1 class="intro-h">พร้อมทดสอบความรู้ด้านการเงินหรือยัง</h1>' + chartSVG() +
+  return '<section class="intro"><div class="intro-in">' + IC.cap + '<p class="intro-kicker">ระบบสอบออนไลน์ · การเงินและการลงทุน</p><h1 class="intro-h">เรียนรู้ได้<em>ทุกที่ ทุกเวลา</em><br>พร้อมทดสอบความรู้แล้วหรือยัง</h1>' + heroArt() +
     '<div class="ringwrap"><svg class="ring" viewBox="0 0 120 120" aria-hidden="true"><circle class="track" cx="60" cy="60" r="54"/><circle class="bar" id="ringBar" cx="60" cy="60" r="54" style="stroke-dashoffset:' + ringOff(S.introLeft) + '"/></svg><div class="ringnum" id="cnt" aria-live="polite">' + S.introLeft + '</div></div>' +
-    '<p class="intro-sub">กำลังพาไปหน้าลงชื่อ…</p><button class="btn ghost-light" data-act="skipintro">ข้ามไปเลย</button></div></section>';
+    '<p class="intro-sub">กำลังพาไปหน้าลงชื่อ…</p><button class="btn ghost" data-act="skipintro">ข้ามไปเลย</button></div>' + leafArt() + '</section>';
 }
 function startIntro() {
   if (S.introTm) return;
@@ -216,55 +253,74 @@ function finishIntro() {
 }
 function nameHTML() {
   var ok = whoOk();
-  return '<section class="namestep">' + chartSVG() + '<div><p class="kicker">ขั้นตอนที่ 1 จาก 2</p><h1 style="margin:8px 0 6px">กรอกข้อมูลผู้สอบ</h1><p class="muted" style="margin-bottom:18px">ใช้ชื่อและเลขที่ที่ตรงกับรายชื่อในห้องเรียน</p>' +
-    '<div class="who" style="padding:0;border:0;margin:0"><label class="field"><span>ชื่อ-สกุล</span><input id="f-name" type="text" data-k="who-name" autocomplete="name" maxlength="60" value="' + esc(S.who.name) + '" placeholder="เช่น สมชาย ใจดี"></label>' +
-    '<label class="field"><span>เลขที่</span><input id="f-no" type="text" inputmode="numeric" data-k="who-no" maxlength="3" value="' + esc(S.who.no) + '" placeholder="เช่น 12"></label></div>' +
-    '<div style="margin-top:20px"><button id="nextBtn" class="btn accent block" data-act="tolist"' + (ok ? '' : ' disabled') + '>ถัดไป: เลือกข้อสอบ</button></div></div></section>';
+  return '<section class="hero hero-split"><div class="hero-txt"><p class="hero-kick">ขั้นตอนที่ 1 จาก 2</p><h1>กรอกข้อมูล<em>ผู้สอบ</em></h1><p class="hero-sub">ใช้ชื่อและเลขที่ที่ตรงกับรายชื่อในห้องเรียน ระบบจะใช้ข้อมูลนี้ส่งผลสอบให้ครู</p>' +
+    '<div class="formcard"><label class="field"><span>ชื่อ-สกุล</span><input id="f-name" type="text" data-k="who-name" autocomplete="name" maxlength="60" value="' + esc(S.who.name) + '" placeholder="เช่น สมชาย ใจดี"></label>' +
+    '<label class="field"><span>เลขที่</span><input id="f-no" type="text" inputmode="numeric" data-k="who-no" maxlength="3" value="' + esc(S.who.no) + '" placeholder="เช่น 12"></label>' +
+    '<button id="nextBtn" class="btn accent block" data-act="tolist"' + (ok ? '' : ' disabled') + '>' + NI.play + 'ถัดไป: เลือกข้อสอบ</button></div></div>' + heroArt() + '</section>';
 }
 function loginHTML() {
-  return '<section class="namestep"><div><p class="kicker">สำหรับผู้สอน</p><h1 style="margin:8px 0 6px">เข้าสู่ระบบผู้สอน</h1><p class="muted" style="margin-bottom:18px">กรอกรหัสผู้สอนที่ตั้งไว้ในระบบ</p>' +
-    '<div class="who" style="padding:0;border:0;margin:0"><label class="field"><span>รหัสผู้สอน</span><input id="f-token" type="password" autocomplete="current-password" data-k="token" value=""></label></div>' +
-    (S.loginErr ? '<div class="notice bad" style="margin-top:14px">' + esc(S.loginErr) + '</div>' : '') +
-    '<div style="margin-top:20px;display:grid;gap:10px"><button class="btn accent block" data-act="teachersubmit">เข้าสู่ระบบ</button><button class="btn ghost block" data-act="cancellogin">กลับ</button></div></div></section>';
+  return '<section class="hero hero-split"><div class="hero-txt"><p class="hero-kick">สำหรับผู้สอน</p><h1>เข้าสู่<em>ระบบผู้สอน</em></h1><p class="hero-sub">กรอกรหัสผู้สอนที่ตั้งไว้ในระบบ เพื่อจัดการข้อสอบและดูผลสด</p>' +
+    '<div class="formcard"><label class="field"><span>รหัสผู้สอน</span><input id="f-token" type="password" autocomplete="current-password" data-k="token" value=""></label>' +
+    (S.loginErr ? '<div class="notice bad">' + esc(S.loginErr) + '</div>' : '') +
+    '<button class="btn accent block" data-act="teachersubmit">' + NI.key + 'เข้าสู่ระบบ</button><button class="btn ghost block" data-act="cancellogin">กลับ</button></div></div>' + heroArt() + '</section>';
 }
 
 /* ---------- student: home ---------- */
 function myAttempt(id) { return S.me[id] || null; }
 function whoOk() { return S.who.name.trim().length > 0 && /^\d{1,3}$/.test(String(S.who.no).trim()); }
+function statCard(icon, tone, num, label) {
+  return '<div class="stat"><span class="stat-ic ' + tone + '">' + icon + '</span><div><b>' + num + '</b><span>' + label + '</span></div></div>';
+}
 function homeHTML() {
-  return '<div class="sumwho"><div><p class="kicker">ผู้สอบ</p><b class="sumname">' + esc(S.who.name) + ' · เลขที่ ' + esc(S.who.no) + '</b></div><button class="btn ghost sm" data-act="editname">แก้ไข</button></div><h2 style="margin:10px 0 12px;font-size:19px">ข้อสอบที่เปิดรับ</h2>' +
-    '<p class="hint" id="examCount" style="margin-bottom:4px"></p><div class="exlist" id="examList">' + examListHTML() + '</div>';
+  var ex = examsSorted(), open = 0, done = 0, wait = 0;
+  ex.forEach(function (e) { var a = myAttempt(e.id); if (e.open) open++; if (a && a.status === 'submitted') done++; else if (a) wait++; });
+  return '<section class="hero"><div class="hero-txt"><p class="hero-kick">สวัสดี ' + esc(S.who.name) + ' · เลขที่ ' + esc(S.who.no) + '</p><h1>เรียนรู้ได้<em>ทุกที่ ทุกเวลา</em></h1><h2 class="hero-h2">พร้อมทดสอบความรู้กับข้อสอบออนไลน์ของเรา</h2><p class="hero-sub">เลือกข้อสอบด้านล่าง เข้าห้องรอ แล้วเริ่มทำพร้อมกันเมื่อครูกดเริ่มสอบ</p>' +
+    '<div class="hero-btns"><button class="btn accent" data-act="tolistscroll">' + NI.play + 'เริ่มทำข้อสอบ</button><button class="btn ghost" data-act="editname">แก้ไขชื่อ</button></div></div>' + heroArt() + '</section>' +
+    '<div class="stats">' + statCard(NI.play, 'g', open, 'ข้อสอบที่เปิดรับ') + statCard(NI.users, 'b', esc(S.who.no), 'เลขที่ของคุณ') + statCard(NI.trophy, 'o', done, 'ส่งแล้ว') + statCard(NI.star, 'p', wait, 'รอ / กำลังทำ') + '</div>' +
+    '<div class="sechead"><h2>ข้อสอบที่เปิดรับสำหรับคุณ</h2><span class="hint" id="examCount"></span></div><div class="cgrid" id="examList">' + examListHTML() + '</div>';
+}
+var TONES = ['t1', 't2', 't3'];
+function coverArt(i) {
+  if (i % 3 === 0) return '<svg viewBox="0 0 300 130" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><g fill="none" stroke="#5AB8FF" stroke-width="1" opacity=".3"><path d="M0 40H300M0 80H300M0 120H300"/></g><polyline points="10,110 60,86 100,96 150,60 190,70 240,30 280,14" fill="none" stroke="#7CD3FF" stroke-width="3.5" stroke-linejoin="round"/><path d="M270 8l14 4-8 12z" fill="#7CD3FF"/>' +
+    [0,1,2,3].map(function (k) { var x = 150 + k * 32, h = 30 + k * 16; return '<g>' + Array.apply(null, Array(Math.round(h / 8))).map(function (_, j) { return '<ellipse cx="' + x + '" cy="' + (128 - j * 8) + '" rx="14" ry="4.5" fill="' + (j % 2 ? '#E9C46A' : '#D4A23C') + '" stroke="#A97A1F" stroke-width=".8"/>'; }).join('') + '</g>'; }).join('') + '</svg>';
+  if (i % 3 === 1) return '<svg viewBox="0 0 300 130" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect x="90" y="20" width="120" height="80" rx="8" fill="#1E3A5F"/><rect x="97" y="27" width="106" height="66" rx="4" fill="#0F2440"/><path d="M135 50l-12 10 12 10M165 50l12 10-12 10M155 46l-10 28" stroke="#7CC3FF" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M70 110l20-10h120l20 10z" fill="#CBD5E1"/><circle cx="250" cy="96" r="16" fill="#3B82F6" opacity=".8"/></svg>';
+  return '<svg viewBox="0 0 300 130" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><ellipse cx="190" cy="126" rx="80" ry="16" fill="#6B4F2A"/><path d="M190 120V70" stroke="#3E8E41" stroke-width="5" stroke-linecap="round"/><path d="M190 86c-30-2-44-20-44-36 22 0 40 12 44 36zM190 76c4-26 22-40 46-40 0 18-16 38-46 40z" fill="#5CBF4A"/>' +
+    [[60,40],[100,70],[60,100],[250,40]].map(function (c) { return '<path d="M' + c[0] + ' ' + (c[1] - 16) + 'l14 8v16l-14 8-14-8v-16z" fill="none" stroke="#C9F2D4" stroke-width="2" opacity=".85"/>'; }).join('') + '</svg>';
 }
 function examsSorted() {
   return Object.keys(S.exams).map(function (id) { return Object.assign({ id: id }, S.exams[id]); }).sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); });
 }
 function examListHTML() {
   var out = [];
-  examsSorted().forEach(function (e) {
+  examsSorted().forEach(function (e, i) {
     var a = myAttempt(e.id), active = a && a.status !== 'submitted';
-    if (!e.open && !active) return;
-    var n = (e.questions || []).length, st = '', btn = '';
-    if (a && a.status === 'submitted') { st = '<span class="state done">ส่งแล้ว ' + clock(a.submittedAt) + '</span>'; btn = '<span class="state plain">ทำได้ครั้งเดียว</span>'; }
+    if (!e.open && !active && !(a && a.status === 'submitted')) return;
+    var n = (e.questions || []).length, badge = 'เปิดรับ', st = '', btn = '';
+    var ans = a ? Object.keys(a.answers || {}).length : 0, pct = n ? Math.round(ans / n * 100) : 0;
+    if (a && a.status === 'submitted') { badge = 'ส่งแล้ว'; st = 'ส่งแล้ว ' + clock(a.submittedAt) + ' · ทำได้ครั้งเดียว'; btn = '<button class="btn ghost block" disabled>ส่งข้อสอบแล้ว</button>'; }
     else if (a && a.status === 'waiting') {
-      if (e.liveAt) { st = '<span class="state doing">ครูเริ่มสอบแล้ว</span>'; btn = '<button class="btn accent" data-act="start" data-id="' + e.id + '" data-needid>เข้าสอบ</button>'; }
-      else { st = '<span class="state plain">อยู่ในห้องรอ</span>'; btn = '<button class="btn ghost" data-act="lobby" data-id="' + e.id + '" data-needid>กลับห้องรอ</button>'; }
+      badge = 'ห้องรอ';
+      if (e.liveAt) { st = 'ครูเริ่มสอบแล้ว'; btn = '<button class="btn accent block" data-act="start" data-id="' + e.id + '" data-needid>' + NI.play + 'เข้าสอบ</button>'; }
+      else { st = 'อยู่ในห้องรอ'; btn = '<button class="btn ghost block" data-act="lobby" data-id="' + e.id + '" data-needid>' + NI.play + 'กลับห้องรอ</button>'; }
     }
-    else if (active) { st = '<span class="state doing">กำลังทำค้างอยู่</span>'; btn = '<button class="btn accent" data-act="start" data-id="' + e.id + '" data-needid>ทำต่อ</button>'; }
-    else { btn = '<button class="btn accent" data-act="join" data-id="' + e.id + '" data-needid>เข้าห้องรอ</button>'; }
-    out.push('<article class="excard"><h3>' + esc(e.title) + '</h3><div class="meta"><span>' + n + ' ข้อ</span><span>·</span><span>' + (e.minutes || 0) + ' นาที</span>' + (st ? '<span>·</span>' + st : '') + '</div>' + (e.proctor ? '<p class="rule">โหมดคุมสอบ: ระบบจะบันทึกเมื่อคุณออกจากหน้านี้</p>' : '') + '<footer>' + btn + '</footer></article>');
+    else if (active) { badge = 'กำลังทำ'; st = 'กำลังทำค้างอยู่'; btn = '<button class="btn accent block" data-act="start" data-id="' + e.id + '" data-needid>' + NI.play + 'ทำต่อ</button>'; }
+    else { st = e.proctor ? 'โหมดคุมสอบ: ระบบบันทึกเมื่อออกจากหน้าสอบ' : 'พร้อมให้เข้าห้องรอ'; btn = '<button class="btn accent block" data-act="join" data-id="' + e.id + '" data-needid>' + NI.play + 'เข้าห้องรอ</button>'; }
+    out.push('<article class="ccard"><div class="ccover ' + TONES[i % 3] + '"><span class="cbadge">' + badge + '</span>' + coverArt(i) + '</div><div class="cbody"><h3>' + esc(e.title) + '</h3><div class="cmeta">' + NI.doc + '<span>' + n + ' ข้อ • ' + (e.minutes || 0) + ' นาที</span></div>' +
+      '<div class="cprog"><div class="pbar"><i style="width:' + pct + '%"></i></div><span>' + pct + '%</span></div><p class="cstate">' + st + '</p>' + btn + '</div></article>');
   });
-  if (!out.length) return '<div class="empty">ยังไม่มีข้อสอบที่เปิดรับ เมื่อครูเปิดรับแล้ว รายการจะขึ้นที่นี่</div>';
+  if (!out.length) return '<div class="empty card">ยังไม่มีข้อสอบที่เปิดรับ เมื่อครูเปิดรับแล้ว รายการจะขึ้นที่นี่</div>';
   return out.join('');
 }
 /* ---------- student: waiting room ---------- */
 function lobbyHTML() {
   var ex = S.exams[S.lobby];
   if (!ex) { S.lobby = null; return homeHTML(); }
-  var head = '<div class="sumwho"><div><p class="kicker">ผู้สอบ</p><b class="sumname">' + esc(S.who.name) + ' · เลขที่ ' + esc(S.who.no) + '</b></div></div><h2 style="margin:10px 0 12px;font-size:19px">' + esc(ex.title) + '</h2>';
+  var n = (ex.questions || []).length;
+  var info = '<div class="lobby-info"><span>' + NI.doc + n + ' ข้อ</span><span>' + IC.clock + (ex.minutes || 0) + ' นาที</span><span>' + NI.users + esc(S.who.name) + ' · เลขที่ ' + esc(S.who.no) + '</span></div>';
   if (ex.liveAt) {
-    return head + '<section style="text-align:center;padding:30px 0"><p class="kicker">เริ่มสอบแล้ว</p><h1 style="margin:8px 0 6px">ครูเริ่มให้ทำข้อสอบได้แล้ว</h1><p class="muted" style="margin-bottom:18px">' + (ex.proctor ? 'กดปุ่มแล้วระบบจะเข้าสู่โหมดเต็มจอ' : 'กดปุ่มด้านล่างเพื่อเริ่มทำข้อสอบ') + '</p><button class="btn accent block" data-act="start" data-id="' + esc(ex.id) + '">เข้าสอบเลย</button></section>';
+    return '<section class="card lobby"><div class="lobby-dot go">' + NI.play + '</div><p class="hero-kick">เริ่มสอบแล้ว</p><h1>ครูเริ่มให้ทำข้อสอบได้แล้ว</h1><p class="muted">' + esc(ex.title) + '</p>' + info + '<p class="muted">' + (ex.proctor ? 'กดปุ่มแล้วระบบจะเข้าสู่โหมดเต็มจอ' : 'กดปุ่มด้านล่างเพื่อเริ่มทำข้อสอบ') + '</p><button class="btn accent block" data-act="start" data-id="' + esc(ex.id) + '">' + NI.play + 'เข้าสอบเลย</button></section>';
   }
-  return head + '<section style="text-align:center;padding:40px 0"><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:var(--accent)" aria-hidden="true"></span><p class="kicker" style="margin-top:16px">อยู่ในห้องรอ</p><h1 style="margin:8px 0 6px">รอครูกดเริ่มสอบ</h1><p class="muted">หน้านี้จะเปลี่ยนให้เองเมื่อครูเริ่มสอบ ไม่ต้องรีเฟรช</p><div style="margin-top:24px"><button class="btn ghost" data-act="leavelobby">ออกจากห้องรอ</button></div></section>';
+  return '<section class="card lobby"><div class="lobby-dot"><i></i></div><p class="hero-kick">อยู่ในห้องรอ</p><h1>รอครูกดเริ่มสอบ</h1><p class="muted">' + esc(ex.title) + '</p>' + info + '<p class="muted">หน้านี้จะเปลี่ยนเป็นหน้าข้อสอบให้เองเมื่อครูเริ่มสอบ ไม่ต้องรีเฟรช</p><button class="btn ghost" data-act="leavelobby">ออกจากห้องรอ</button></section>';
 }
 async function joinLobby(id) {
   if (!whoOk()) return;
@@ -630,7 +686,7 @@ function liveHTML() {
   if (!ex.length) return '<div class="head"><div><p class="kicker">ผลสด</p><h1 style="margin-top:6px">ยังไม่มีข้อสอบ</h1></div></div><div class="empty"><p style="margin-bottom:14px">สร้างข้อสอบก่อน เมื่อนักเรียนเริ่มทำ ข้อมูลจะขึ้นที่หน้านี้</p><button class="btn" data-act="area" data-v="exams">ไปที่ข้อสอบ</button></div>';
   if (!S.examSel || !S.exams[S.examSel]) S.examSel = ex[0].id;
   var opts = ex.map(function (e) { return '<option value="' + e.id + '"' + (e.id === S.examSel ? ' selected' : '') + '>' + esc(e.title) + (e.open ? '' : ' (ปิดรับอยู่)') + '</option>'; }).join('');
-  return '<div class="head"><div><p class="kicker">ผลสด</p><h1 style="margin-top:6px">ติดตามการทำข้อสอบ</h1><p>อัปเดตเองอัตโนมัติ แตะชื่อเพื่อดูบันทึกเวลาของนักเรียนคนนั้น</p></div><button class="btn ghost sm" data-act="csv">ส่งออก CSV</button></div>' +
+  return '<div class="head"><div><p class="hero-kick">ผลสด</p><h1 style="margin-top:6px">ติดตามการทำ<em>ข้อสอบ</em></h1><p>อัปเดตเองอัตโนมัติ แตะชื่อเพื่อดูบันทึกเวลาของนักเรียนคนนั้น</p></div><button class="btn ghost sm" data-act="csv">ส่งออก CSV</button></div>' +
     '<div class="toolbar"><label class="field"><span>ข้อสอบ</span><select id="sel-exam">' + opts + '</select></label><button class="btn sm" data-act="golive" data-id="' + S.examSel + '" data-v="' + (S.exams[S.examSel].liveAt ? '0' : '1') + '">' + (S.exams[S.examSel].liveAt ? 'จบการสอบพร้อมกัน' : 'เริ่มสอบพร้อมกัน') + '</button></div>' +
     '<div class="sumrow" id="liveSum"></div><div class="tablewrap"><table class="tbl"><thead><tr><th>เลขที่</th><th>ชื่อ-สกุล</th><th>สถานะ</th><th>ตอบแล้ว</th><th>ออกจากหน้าสอบ</th><th>เริ่ม</th><th>ส่งเมื่อ</th><th>คะแนน</th></tr></thead><tbody id="liveBody"></tbody></table></div><div id="liveDetail"></div>';
 }
@@ -719,13 +775,38 @@ function exportCsv() {
 
 /* ---------- teacher: exams list + editor ---------- */
 function examsHTML() {
-  var ex = examsSorted();
-  var list = ex.map(function (e) {
+  var ex = examsSorted(), openN = 0, doing = 0, done = 0;
+  ex.forEach(function (e) { if (e.open) openN++; });
+  S.attempts.forEach(function (a) { if (a.status === 'submitted') done++; else if (a.status === 'doing' || a.status === 'away') doing++; });
+  var list = ex.map(function (e, i) {
     var n = (e.questions || []).length;
+    var mine = S.attempts.filter(function (a) { return a.examId === e.id; });
+    var sub = mine.filter(function (a) { return a.status === 'submitted'; }).length;
+    var pct = mine.length ? Math.round(sub / mine.length * 100) : 0;
+    var badge = e.liveAt ? 'กำลังสอบ' : e.open ? 'เปิดรับ' : 'ปิดรับ';
     var del = S.confirmDel === e.id ? '<button class="btn danger sm" data-act="delyes" data-id="' + e.id + '">ยืนยันลบ</button><button class="btn ghost sm" data-act="delno">ยกเลิก</button>' : '<button class="btn ghost sm" data-act="del" data-id="' + e.id + '">ลบ</button>';
-    return '<article class="exrow"><div class="exinfo"><h3>' + esc(e.title) + '</h3><div class="exmeta"><span class="state ' + (e.open ? 'done' : 'plain') + '">' + (e.open ? 'เปิดรับอยู่' : 'ปิดรับอยู่') + '</span><span>·</span><span>' + n + ' ข้อ</span><span>·</span><span>' + (e.minutes || 0) + ' นาที</span>' + (e.proctor ? '<span>·</span><span>โหมดคุมสอบ</span>' : '') + (e.shuffle ? '<span>·</span><span>สลับข้อ</span>' : '') + '</div></div><div class="exact"><button class="btn sm" data-act="golive" data-id="' + e.id + '" data-v="' + (e.liveAt ? '0' : '1') + '">' + (e.liveAt ? 'จบการสอบพร้อมกัน' : 'เริ่มสอบพร้อมกัน') + '</button><button class="btn sm" data-act="toggleopen" data-id="' + e.id + '">' + (e.open ? 'ปิดรับ' : 'เปิดรับ') + '</button><button class="btn ghost sm" data-act="edit" data-id="' + e.id + '">แก้ไข</button><button class="btn ghost sm" data-act="preview" data-id="' + e.id + '">ดูตัวอย่าง</button><button class="btn ghost sm" data-act="track" data-id="' + e.id + '">ผลสด</button>' + del + '</div></article>';
+    return '<article class="ccard"><div class="ccover ' + TONES[i % 3] + '"><span class="cbadge' + (e.open ? '' : ' off') + '">' + badge + '</span>' + coverArt(i) + '</div><div class="cbody"><h3>' + esc(e.title) + '</h3>' +
+      '<div class="cmeta">' + NI.doc + '<span>' + n + ' ข้อ • ' + (e.minutes || 0) + ' นาที' + (e.proctor ? ' • คุมสอบ' : '') + (e.shuffle ? ' • สลับข้อ' : '') + '</span></div>' +
+      '<div class="cprog"><div class="pbar"><i style="width:' + pct + '%"></i></div><span>' + pct + '%</span></div><p class="cstate">ส่งแล้ว ' + sub + ' จาก ' + mine.length + ' คน</p>' +
+      '<button class="btn ' + (e.liveAt ? 'ghost' : 'accent') + ' block" data-act="golive" data-id="' + e.id + '" data-v="' + (e.liveAt ? '0' : '1') + '">' + NI.play + (e.liveAt ? 'จบการสอบพร้อมกัน' : 'เริ่มสอบพร้อมกัน') + '</button>' +
+      '<div class="cacts"><button class="btn ghost sm" data-act="toggleopen" data-id="' + e.id + '">' + (e.open ? 'ปิดรับ' : 'เปิดรับ') + '</button><button class="btn ghost sm" data-act="edit" data-id="' + e.id + '">แก้ไข</button><button class="btn ghost sm" data-act="preview" data-id="' + e.id + '">ดูตัวอย่าง</button><button class="btn ghost sm" data-act="track" data-id="' + e.id + '">ผลสด</button>' + del + '</div></div></article>';
   }).join('');
-  return '<div class="head"><div><p class="kicker">ข้อสอบ</p><h1 style="margin-top:6px">รายการข้อสอบ</h1><p>แก้ไขได้ตลอด นักเรียนที่เปิดหน้าอยู่จะเห็นการเปลี่ยนแปลงภายในไม่กี่วินาที</p></div><button class="btn accent" data-act="newexam">สร้างข้อสอบ</button></div>' + (list ? '<div class="exlist2">' + list + '</div>' : '<div class="empty">ยังไม่มีข้อสอบ กด “สร้างข้อสอบ” เพื่อเริ่มต้น</div>');
+  // แผงด้านขวา: ข้อสอบที่กำลังสอบ และวงกลมความคืบหน้า
+  var live = ex.filter(function (e) { return e.liveAt; });
+  var focus = live[0] || ex[0];
+  var fm = focus ? S.attempts.filter(function (a) { return a.examId === focus.id; }) : [];
+  var fs = fm.filter(function (a) { return a.status === 'submitted'; }).length, fp = fm.length ? Math.round(fs / fm.length * 100) : 0;
+  var C = 2 * Math.PI * 46;
+  var sched = live.length ? live.map(function (e) { var d = new Date(e.liveAt); return '<div class="sched"><div class="sched-d"><span>เริ่ม</span><b>' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + '</b><span>น.</span></div><div class="sched-t"><b>' + esc(e.title) + '</b><span>' + (e.minutes || 0) + ' นาที · หมดเวลา ' + clock(e.liveAt + (e.minutes || 0) * 60000).slice(0, 5) + ' น.</span><button class="btn accent sm" data-act="track" data-id="' + e.id + '">ดูผลสด' + NI.arrow + '</button></div></div>'; }).join('')
+    : '<p class="muted small">ยังไม่มีข้อสอบที่กำลังสอบ กด “เริ่มสอบพร้อมกัน” ที่การ์ดข้อสอบเพื่อเริ่ม</p>';
+  var side = '<aside class="rcol"><section class="card"><div class="card-h"><h3>' + NI.cal + 'การสอบที่กำลังดำเนินอยู่</h3></div>' + sched + '</section>' +
+    '<section class="card donutcard"><div class="card-h"><h3>' + NI.chart + 'ความคืบหน้าการส่ง</h3></div><div class="donutrow"><div class="donut"><svg viewBox="0 0 110 110" aria-hidden="true"><circle cx="55" cy="55" r="46" fill="none" stroke="#DDEFE4" stroke-width="12"/><circle cx="55" cy="55" r="46" fill="none" stroke="#16A05A" stroke-width="12" stroke-linecap="round" stroke-dasharray="' + C.toFixed(1) + '" stroke-dashoffset="' + (C * (1 - fp / 100)).toFixed(1) + '" transform="rotate(-90 55 55)"/></svg><b>' + fp + '%</b></div>' +
+    '<div><span class="muted small">' + (focus ? esc(focus.title) : 'ยังไม่มีข้อสอบ') + '</span><p><b>ส่งแล้ว ' + fs + ' จาก ' + fm.length + ' คน</b></p>' + (focus ? '<button class="btn ghost sm" data-act="track" data-id="' + focus.id + '">ดูรายละเอียด</button>' : '') + '</div></div></section></aside>';
+  return '<section class="hero"><div class="hero-txt"><p class="hero-kick">แผงควบคุมผู้สอน</p><h1>จัดการข้อสอบได้<em>ทุกที่ ทุกเวลา</em></h1><h2 class="hero-h2">สร้าง แก้ไข และติดตามผลสอบแบบเรียลไทม์</h2><p class="hero-sub">แก้ไขได้ตลอด นักเรียนที่เปิดหน้าอยู่จะเห็นการเปลี่ยนแปลงภายในไม่กี่วินาที</p>' +
+    '<div class="hero-btns"><button class="btn accent" data-act="newexam">' + NI.plus + 'สร้างข้อสอบ</button><button class="btn ghost" data-act="area" data-v="live">' + NI.chart + 'ดูผลสด</button></div></div>' + heroArt() + '</section>' +
+    '<div class="stats">' + statCard(NI.play, 'g', ex.length, 'ข้อสอบทั้งหมด') + statCard(NI.users, 'b', openN, 'เปิดรับอยู่') + statCard(NI.trophy, 'o', doing, 'กำลังสอบตอนนี้') + statCard(NI.star, 'p', done, 'ส่งแล้วทั้งหมด') + '</div>' +
+    '<div class="twocol"><div><div class="sechead"><h2>ข้อสอบของคุณ</h2><button class="linkarrow" data-act="newexam">สร้างใหม่' + NI.arrow + '</button></div>' +
+    (list ? '<div class="cgrid">' + list + '</div>' : '<div class="empty card">ยังไม่มีข้อสอบ กด “สร้างข้อสอบ” เพื่อเริ่มต้น</div>') + '</div>' + side + '</div>';
 }
 function blankQ() { return { id: nid('q'), text: '', choices: ['', '', '', ''], ans: 0, pts: 1 }; }
 function newDraft() { return { id: nid('e'), title: '', minutes: 30, proctor: true, shuffle: false, open: false, questions: [blankQ()], isNew: true }; }
@@ -846,7 +927,8 @@ function act(a, b) {
       break;
     case 'editname': S.step = 'name'; S.lobby = null; render(); break;
     case 'skipintro': finishIntro(); break;
-    case 'home': endRun(); render(); loadStatus().then(function (c) { if (c) refreshView(); }); break;
+    case 'tolistscroll': var el = document.getElementById('examList'); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); break;
+    case 'home': endRun(); if (S.area === 'login') S.area = 'student'; render(); loadStatus().then(function (c) { if (c) refreshView(); }); break;
     case 'goto': R.cur = +b.getAttribute('data-i'); R.review = false; render(); window.scrollTo(0, 0); break;
     case 'prev': if (R.cur > 0) { R.cur--; render(); window.scrollTo(0, 0); } break;
     case 'next': R.cur++; render(); window.scrollTo(0, 0); break;
