@@ -299,65 +299,122 @@ function updateIdGate() {
 /* ---------- student: exam ---------- */
 function ordered(ex) { var qs = ex.questions || []; return ex.shuffle ? shuffle(qs, S.who.no + '|' + S.run.examId) : qs; }
 function leaveCount(att) { var n = 0; (att.events || []).forEach(function (e) { if (e.t === 'leave') n++; }); return n; }
+/* ---------- exam page (light green layout) ---------- */
+var IC = {
+  cap: '<svg width="34" height="34" viewBox="0 0 48 48" aria-hidden="true"><path d="M24 8 3 18l21 10 21-10z" fill="#16A05A"/><path d="M11 22v9c0 3 6 7 13 7s13-4 13-7v-9l-13 6z" fill="#0E7C45"/><path d="M42 19v11" stroke="#0E7C45" stroke-width="2.5" stroke-linecap="round"/><circle cx="38" cy="37" r="7" fill="#fff"/><path d="M36 33.5v7l6-3.5z" fill="#16A05A"/></svg>',
+  list: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg>',
+  flag: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg>',
+  clock: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  bars: '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3" y="13" width="4" height="8" rx="1"/><rect x="10" y="8" width="4" height="13" rx="1"/><rect x="17" y="3" width="4" height="18" rx="1"/></svg>',
+  redo: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></svg>',
+  left: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>',
+  right: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+  user: '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="8" r="4.2"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z"/></svg>'
+};
+function flagsKey(R) { return 'omr.flags.' + R.examId + '.' + S.who.no; }
+function ensureFlags(R) {
+  if (R.flags) return R.flags;
+  R.flags = {};
+  if (!R.preview) { try { var o = JSON.parse(get(flagsKey(R)) || '{}'); if (o && typeof o === 'object') R.flags = o; } catch (e) {} }
+  return R.flags;
+}
+function saveFlags(R) { if (!R.preview) put(flagsKey(R), JSON.stringify(R.flags || {})); }
+function qState(R, q) { if (R.flags[q.id]) return 'flag'; if (R.att.answers[q.id] !== undefined) return 'ans'; return ''; }
+function numGrid(list, R, cls) {
+  return '<div class="' + cls + '">' + list.map(function (q, i) {
+    var st = qState(R, q), cur = i === R.cur && !R.review;
+    var lab = st === 'ans' ? 'ตอบแล้ว' : st === 'flag' ? 'ทบทวน' : 'ยังไม่ตอบ';
+    return '<button class="xn' + (st ? ' ' + st : '') + (cur ? ' cur' : '') + '" data-act="goto" data-i="' + i + '" aria-label="ข้อ ' + (i + 1) + ' ' + lab + '"' + (cur ? ' aria-current="step"' : '') + '>' + (i + 1) + '</button>';
+  }).join('') + '</div>';
+}
 function examHTML() {
   var R = S.run, att = R.att, ex = S.exams[R.examId];
+  ensureFlags(R);
   var veil = '';
   if (R.needFs) veil = '<div class="veil"><div class="panel"><h2>กลับเข้าโหมดเต็มจอ</h2><p class="muted">ข้อสอบนี้ต้องทำในโหมดเต็มจอ แตะปุ่มด้านล่างเพื่อทำข้อสอบต่อ</p><button class="btn accent block" data-act="fsback">กลับเข้าโหมดเต็มจอ</button></div></div>';
-  var quit = R.preview ? '<button class="btn ghost sm" data-act="exitpreview">ออกจากการดูตัวอย่าง</button>' : '';
-  var bar = '<header class="xbar"><div class="xbar-in"><div class="xt"><strong>' + esc(att.title) + '</strong><span>' + (R.preview ? 'ดูตัวอย่าง ไม่มีการบันทึกผล' : 'เลขที่ ' + esc(S.who.no) + ' · ' + esc(S.who.name)) + '</span></div><span class="timer" id="tmr" aria-live="off">--</span></div></header>';
-  var sub = '<div class="xsub"><span id="sv"></span>' + (att.proctor && !R.preview ? '<span>ออกจากหน้าสอบแล้ว <b id="lvc">' + leaveCount(att) + '</b> ครั้ง</span>' : '') + quit + '</div>';
-  var notice = R.notice ? '<div class="notice" style="margin-bottom:16px;display:flex;gap:12px;justify-content:space-between;align-items:center;flex-wrap:wrap"><span>' + esc(R.notice) + '</span><button class="btn ghost sm" data-act="dismiss">รับทราบ</button></div>' : '';
-  if (!ex) return veil + bar + '<main class="page" style="padding-top:10px">' + sub + notice + '<div class="notice bad">ครูลบข้อสอบนี้แล้ว คำตอบที่บันทึกไว้จะถูกส่งให้ครู</div><div style="margin-top:16px"><button class="btn block" data-act="submit">ส่งเท่าที่ทำ</button></div></main>';
+  var whoTxt = R.preview ? 'ดูตัวอย่าง' : esc(S.who.name);
+  var whoSub = R.preview ? 'ไม่มีการบันทึกผล' : 'เลขที่ ' + esc(S.who.no);
+  var top = '<header class="xm-top"><div class="xm-top-in"><div class="xm-brand">' + IC.cap + '<span class="xm-sep" aria-hidden="true"></span><div class="xm-tt"><b>แบบทดสอบออนไลน์</b><span>' + esc(att.title) + '</span></div></div>' +
+    '<div class="xm-who"><span class="xm-tchip">' + IC.clock + '<span data-tmr>--</span></span><span class="xm-avatar">' + IC.user + '</span><span class="xm-whot"><b>' + whoTxt + '</b><span>' + whoSub + '</span></span></div></div></header>';
+  var notice = R.notice ? '<div class="xm-notice"><span>' + esc(R.notice) + '</span><button class="xm-btn ghost sm" data-act="dismiss">รับทราบ</button></div>' : '';
+  var wrap = function (inner) { return veil + '<div class="xm">' + top + '<div class="xm-grid">' + inner + '</div></div>'; };
+  if (!ex) return wrap('<main class="xm-main"><section class="xm-card"><h2 class="xm-qtext">ครูลบข้อสอบนี้แล้ว</h2><p class="xm-muted">คำตอบที่บันทึกไว้จะถูกส่งให้ครู</p><div style="margin-top:18px"><button class="xm-btn block" data-act="submit">ส่งเท่าที่ทำ</button></div></section></main>');
   var list = ordered(ex), total = list.length;
-  if (R.cur >= total) R.cur = Math.max(0, total - 1);
+  if (!total) return wrap('<main class="xm-main"><section class="xm-card"><p class="xm-muted">ข้อสอบนี้ยังไม่มีคำถาม</p></section></main>');
+  if (R.cur >= total) R.cur = total - 1;
   var answered = list.filter(function (q) { return att.answers[q.id] !== undefined; }).length;
-  var pct = total ? Math.round(answered / total * 100) : 0;
-  var prog = '<div class="progress" role="img" aria-label="ตอบแล้ว ' + answered + ' จาก ' + total + ' ข้อ"><i style="width:' + pct + '%"></i></div>';
-  var body;
+  var flagged = list.filter(function (q) { return R.flags[q.id]; }).length;
+
+  var left = '<aside class="xm-left"><div class="xm-card"><div class="xm-pill">' + IC.list + 'ข้อสอบทั้งหมด</div>' + numGrid(list, R, 'xm-nums c3') +
+    '<ul class="xm-legend"><li><i class="ok"></i>ตอบแล้ว</li><li><i></i>ยังไม่ตอบ</li><li><i class="fl"></i>ทบทวน</li></ul></div></aside>';
+
+  var center;
   if (R.review) {
-    var un = 0;
-    var grid = list.map(function (q, i) { var a = att.answers[q.id] !== undefined; if (!a) un++; return '<button class="qn' + (a ? ' ans' : '') + '" data-act="goto" data-i="' + i + '" aria-label="ข้อ ' + (i + 1) + (a ? ' ตอบแล้ว' : ' ยังไม่ได้ตอบ') + '">' + (i + 1) + '</button>'; }).join('');
-    body = '<div class="sheet"><h2 class="sheet-h">ตรวจทานก่อนส่ง</h2><p class="muted" style="margin-top:6px">' + (un ? 'ยังไม่ได้ตอบ ' + un + ' ข้อ แตะหมายเลขข้อเพื่อกลับไปตอบ' : 'ตอบครบทุกข้อแล้ว') + '</p><div class="qgrid">' + grid + '</div><div class="navrow"><button class="btn ghost" data-act="unreview">กลับไปทำต่อ</button><button class="btn accent" data-act="submit">ส่งข้อสอบ</button></div></div>';
+    var un = total - answered;
+    center = '<section class="xm-card"><div class="xm-qhead"><span class="xm-pill">' + IC.list + 'ตรวจทานก่อนส่ง</span></div>' +
+      '<h2 class="xm-qtext">' + (un ? 'ยังไม่ได้ตอบ ' + un + ' ข้อ' : 'ตอบครบทุกข้อแล้ว') + '</h2><p class="xm-muted">' + (un || flagged ? 'แตะหมายเลขข้อเพื่อกลับไปแก้ไข' : 'ตรวจทานเรียบร้อยแล้ว กดส่งข้อสอบได้เลย') + (flagged ? ' · ทำเครื่องหมายทบทวนไว้ ' + flagged + ' ข้อ' : '') + '</p>' +
+      numGrid(list, R, 'xm-nums c5 big') + '</section>' +
+      '<div class="xm-card xm-navbar"><button class="xm-btn ghost" data-act="unreview">' + IC.left + 'กลับไปทำต่อ</button><button class="xm-btn" data-act="submit">ส่งข้อสอบ' + IC.right + '</button></div>';
   } else {
-    var q = list[R.cur];
-    if (!q) return veil + bar + '<main class="page" style="padding-top:10px">' + sub + '<div class="empty">ข้อสอบนี้ยังไม่มีคำถาม</div></main>';
-    var chosen = att.answers[q.id];
+    var q = list[R.cur], chosen = att.answers[q.id], fl = !!R.flags[q.id];
     var idx = q.choices.map(function (_, i) { return i; }); if (ex.shuffle) idx = shuffle(idx, S.who.no + '|' + q.id);
-    var opts = idx.map(function (orig, pos) { var on = chosen === orig; return '<label class="opt' + (on ? ' on' : '') + '"><input type="radio" name="ch" value="' + orig + '" data-act="pick"' + (on ? ' checked' : '') + '><span class="bub">' + (LET[pos] || pos + 1) + '</span><span class="otext">' + esc(q.choices[orig]) + '</span></label>'; }).join('');
-    var nav = list.map(function (qq, i) { var a = att.answers[qq.id] !== undefined; return '<button class="qn' + (a ? ' ans' : '') + (i === R.cur ? ' cur' : '') + '" data-act="goto" data-i="' + i + '" aria-label="ข้อ ' + (i + 1) + (a ? ' ตอบแล้ว' : '') + '">' + (i + 1) + '</button>'; }).join('');
+    var opts = idx.map(function (orig, pos) {
+      var on = chosen === orig;
+      return '<label class="xm-opt' + (on ? ' on' : '') + '"><input type="radio" name="ch" value="' + orig + '" data-act="pick"' + (on ? ' checked' : '') + '><span class="xm-radio" aria-hidden="true"></span><span class="xm-let">' + (LET[pos] || pos + 1) + '.</span><span class="xm-otext">' + esc(q.choices[orig]) + '</span></label>';
+    }).join('');
     var last = R.cur === total - 1;
-    body = '<div class="' + (att.proctor ? 'noselect' : '') + '"><div class="qhead"><span class="qno">ข้อ ' + (R.cur + 1) + ' / ' + total + '</span><span>' + (q.pts && q.pts !== 1 ? 'คะแนน ' + q.pts : '') + '</span></div><div class="qtext">' + esc(q.text) + '</div><div class="opts" role="radiogroup">' + opts + '</div>' +
-      '<div class="navrow"><button class="btn ghost" data-act="prev"' + (R.cur === 0 ? ' disabled' : '') + '>ก่อนหน้า</button>' + (last ? '<button class="btn accent" data-act="review">ตรวจทานและส่ง</button>' : '<button class="btn" data-act="next">ข้อถัดไป</button>') + '</div></div>' +
-      '<div class="qgrid" aria-label="ไปยังข้อ">' + nav + '</div><div style="margin-top:16px"><button class="btn ghost block" data-act="review">ตรวจทานและส่งข้อสอบ</button></div>';
+    center = '<section class="xm-card xm-q' + (att.proctor ? ' noselect' : '') + '"><div class="xm-qhead"><span class="xm-pill">' + IC.list + 'ข้อที่ ' + (R.cur + 1) + ' จาก ' + total + '</span>' +
+      '<button class="xm-flag' + (fl ? ' on' : '') + '" data-act="flag" aria-pressed="' + fl + '">' + IC.flag + (fl ? 'ทำเครื่องหมายทบทวนแล้ว' : 'ทำเครื่องหมายทบทวน') + '</button></div>' +
+      '<h2 class="xm-qtext">' + esc(q.text) + '</h2>' + (q.pts && q.pts !== 1 ? '<p class="xm-muted" style="margin:-8px 0 14px">คะแนน ' + q.pts + '</p>' : '') +
+      '<div class="xm-opts" role="radiogroup" aria-label="ตัวเลือก">' + opts + '</div></section>' +
+      '<div class="xm-card xm-navbar"><button class="xm-btn ghost" data-act="prev"' + (R.cur === 0 ? ' disabled' : '') + '>' + IC.left + 'ข้อก่อนหน้า</button>' +
+      (last ? '<button class="xm-btn" data-act="review">ตรวจทานและส่ง' + IC.right + '</button>' : '<button class="xm-btn" data-act="next">ข้อถัดไป' + IC.right + '</button>') + '</div>';
   }
-  return veil + bar + '<main class="page" style="padding-top:10px">' + sub + prog + notice + body + '</main>';
+
+  var quit = R.preview ? '<button class="xm-btn ghost sm block" data-act="exitpreview">ออกจากการดูตัวอย่าง</button>' : '';
+  var right = '<aside class="xm-right"><div class="xm-card xm-time"><div class="xm-pill soft">' + IC.clock + 'เวลาที่เหลือ</div><div class="xm-clock" id="tmr" data-tmr>--</div><div class="xm-tbar"><i data-tbar></i></div>' +
+    '<div class="xm-count"><span>จำนวนข้อที่ทำไปแล้ว</span><b>' + answered + ' / ' + total + '</b></div></div>' +
+    '<div class="xm-card"><h3 class="xm-h3">' + IC.bars + 'สรุปคำตอบ</h3>' + numGrid(list, R, 'xm-nums c5') +
+    '<button class="xm-btn ghost block" data-act="nextflag"' + (flagged ? '' : ' disabled') + '>' + IC.redo + 'ทบทวนข้อที่เลือก' + (flagged ? ' (' + flagged + ')' : '') + '</button>' +
+    (R.review ? '' : '<button class="xm-btn block" data-act="review" style="margin-top:10px">ตรวจทานและส่งข้อสอบ</button>') +
+    '<div class="xm-meta"><span id="sv"></span>' + (att.proctor && !R.preview ? '<span>ออกจากหน้าสอบ <b id="lvc">' + leaveCount(att) + '</b> ครั้ง</span>' : '') + '</div>' + quit + '</div></aside>';
+
+  return wrap(left + '<main class="xm-main">' + notice + center + '</main>' + right);
 }
 function doneHTML() {
   var R = S.run, att = R.att, ex = S.exams[R.examId];
   var total = ex ? (ex.questions || []).length : Object.keys(att.answers).length;
   var n = ex ? (ex.questions || []).filter(function (q) { return att.answers[q.id] !== undefined; }).length : total;
   var timedOut = att.events && att.events.length && att.events[att.events.length - 1].t === 'timeout';
-  var lv = att.proctor ? '<p class="muted small">บันทึกการออกจากหน้าสอบ ' + leaveCount(att) + ' ครั้ง</p>' : '';
-  var row = 'display:flex;justify-content:space-between;padding:12px 0;border-top:1px solid var(--rule)';
-  return headerHTML(true) + '<main class="page"><section style="max-width:520px;margin:20px auto 0"><p class="kicker">ส่งข้อสอบแล้ว</p><h1 style="margin:8px 0 6px">เรียบร้อย</h1><p class="muted" style="margin-bottom:20px">' + esc(att.title) + '</p><dl class="stack" style="gap:0;margin:0 0 18px"><div style="' + row + '"><span class="muted">ชื่อ</span><b>' + esc(S.who.name) + '</b></div><div style="' + row + '"><span class="muted">เลขที่</span><b>' + esc(S.who.no) + '</b></div><div style="' + row + '"><span class="muted">ตอบแล้ว</span><b>' + n + ' / ' + total + ' ข้อ</b></div><div style="' + row + ';border-bottom:1px solid var(--rule)"><span class="muted">เวลาส่ง</span><b>' + clock(att.submittedAt) + (timedOut ? ' (หมดเวลา)' : '') + '</b></div></dl>' + lv + '<p class="muted small" style="margin:12px 0 18px">ผลคะแนนจะแจ้งโดยครูผู้สอน</p><div id="sv" class="muted small"></div><button class="btn block" data-act="home">กลับหน้าหลัก</button></section></main>';
+  var row = function (k, v) { return '<div class="xm-row"><span>' + k + '</span><b>' + v + '</b></div>'; };
+  return '<div class="xm"><header class="xm-top"><div class="xm-top-in"><div class="xm-brand">' + IC.cap + '<span class="xm-sep" aria-hidden="true"></span><div class="xm-tt"><b>แบบทดสอบออนไลน์</b><span>' + esc(att.title) + '</span></div></div></div></header>' +
+    '<div class="xm-done"><section class="xm-card"><div class="xm-check" aria-hidden="true"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>' +
+    '<h1 class="xm-qtext" style="text-align:center;margin:14px 0 4px">ส่งข้อสอบเรียบร้อย</h1><p class="xm-muted" style="text-align:center;margin-bottom:18px">' + esc(att.title) + '</p>' +
+    row('ชื่อ', esc(S.who.name)) + row('เลขที่', esc(S.who.no)) + row('ตอบแล้ว', n + ' / ' + total + ' ข้อ') + row('เวลาส่ง', clock(att.submittedAt) + (timedOut ? ' (หมดเวลา)' : '')) +
+    (att.proctor ? row('ออกจากหน้าสอบ', leaveCount(att) + ' ครั้ง') : '') +
+    '<p class="xm-muted" style="margin:16px 0">ผลคะแนนจะแจ้งโดยครูผู้สอน</p><div id="sv" class="xm-meta"></div><button class="xm-btn block" data-act="home">กลับหน้าหลัก</button></section></div></div>';
 }
 function afterExam() {
   updateTimer(); setSave(S.run.saveState || 'saved');
   if (!S.tm) S.tm = setInterval(tick, 1000);
 }
-/* Countdown: whole minutes while more than a minute remains, seconds only in the last minute. */
+/* นับถอยหลังแบบ ชม:นาที:วินาที */
 function timerLabel(left) {
-  if (left <= 0) return '0:00';
-  if (left > 60000) return Math.ceil(left / 60000) + ' นาที';
-  var s = Math.ceil(left / 1000); return '0:' + pad(s);
+  if (left <= 0) return '00:00';
+  var t = Math.ceil(left / 1000), h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), r = t % 60;
+  return (h ? pad(h) + ':' : '') + pad(m) + ':' + pad(r);
 }
 function updateTimer() {
-  var R = S.run; if (!R) return; var el = document.getElementById('tmr'); if (!el) return;
-  var left = R.att.endAt - Date.now();
-  var label = timerLabel(left);
-  if (el.textContent !== label) el.textContent = label;
-  var low = left <= 60000;
-  if (el.classList.contains('low') !== low) el.classList.toggle('low', low);
+  var R = S.run; if (!R) return;
+  var left = R.att.endAt - Date.now(), label = timerLabel(left), low = left <= 60000;
+  var span = Math.max(1, R.att.endAt - R.att.startedAt), pct = Math.max(0, Math.min(100, left / span * 100));
+  var els = document.querySelectorAll('[data-tmr]');
+  for (var i = 0; i < els.length; i++) {
+    if (els[i].textContent !== label) els[i].textContent = label;
+    if (els[i].classList.contains('low') !== low) els[i].classList.toggle('low', low);
+  }
+  var bars = document.querySelectorAll('[data-tbar]');
+  for (var j = 0; j < bars.length; j++) { bars[j].style.width = pct.toFixed(2) + '%'; bars[j].classList.toggle('low', low); }
 }
 function tick() {
   var R = S.run;
@@ -795,6 +852,16 @@ function act(a, b) {
     case 'next': R.cur++; render(); window.scrollTo(0, 0); break;
     case 'review': R.review = true; render(); window.scrollTo(0, 0); break;
     case 'unreview': R.review = false; render(); break;
+    case 'flag':
+      var fx = S.exams[R.examId], fq = fx && ordered(fx)[R.cur];
+      if (fq) { ensureFlags(R); if (R.flags[fq.id]) delete R.flags[fq.id]; else R.flags[fq.id] = true; saveFlags(R); render(); }
+      break;
+    case 'nextflag':
+      var nx = S.exams[R.examId]; if (!nx) break;
+      ensureFlags(R);
+      var nl = ordered(nx), from = R.review ? -1 : R.cur;
+      for (var k = 1; k <= nl.length; k++) { var ii = (from + k + nl.length) % nl.length; if (R.flags[nl[ii].id]) { R.cur = ii; R.review = false; render(); window.scrollTo(0, 0); break; } }
+      break;
     case 'submit': submitExam('manual'); break;
     case 'dismiss': R.notice = null; render(); break;
     case 'fsback': reqFs().then(function (ok) { if (!S.run) return; S.run.needFs = false; S.run.fs = ok; render(); }); break;
@@ -842,11 +909,7 @@ app.addEventListener('change', function (e) {
     if (!ex || R.att.status === 'submitted') return;
     var list = ordered(ex), q = list[R.cur]; if (!q) return;
     R.att.answers[q.id] = Number(t.value);
-    var opts = app.querySelectorAll('.opt');
-    for (var i = 0; i < opts.length; i++) { var inp = opts[i].querySelector('input'); opts[i].classList.toggle('on', inp.checked); }
-    var qn = app.querySelectorAll('.qgrid .qn'); if (qn[R.cur]) qn[R.cur].classList.add('ans');
-    var answered = list.filter(function (qq) { return R.att.answers[qq.id] !== undefined; }).length;
-    var bar = app.querySelector('.progress i'); if (bar) bar.style.width = Math.round(answered / list.length * 100) + '%';
+    var y = window.scrollY; render(); window.scrollTo(0, y);
     setSave('saving'); queueFlush(1200);
   }
   if (t.id === 'sel-exam') { S.examSel = t.value; S.detail = null; renderLiveParts(); }
