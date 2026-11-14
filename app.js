@@ -374,6 +374,7 @@ function setSave(s) {
 }
 function endRun() {
   clearInterval(S.tm); S.tm = null; S.away = false; exitFs(); S.run = null;
+  if (typeof presenceTm !== 'undefined' && presenceTm) { clearTimeout(presenceTm); presenceTm = null; }
 }
 
 /* ---------- student: attempt logic ---------- */
@@ -424,16 +425,36 @@ function logEv(t, extra) {
   var el = document.getElementById('lvc'); if (el) el.textContent = leaveCount(R.att);
   queueFlush(800);
 }
+/* ออกจากหน้าสอบต้องหายไปนานเกินค่านี้ จึงจะนับเป็นออก (ตั้งเป็น 5 วินาที) */
+var PRESENCE_MS = 5000;
+var presenceTm = null;
+function isGone() { return document.hidden || !document.hasFocus(); }
+function confirmLeave(r) {
+  presenceTm = null;
+  var R = S.run;
+  if (!R || R.att.status === 'submitted' || S.away || !isGone()) return;
+  S.away = true; R.att.status = 'away';
+  logEv('leave', { r: r, at: S.awaySince });
+}
 function checkPresence() {
   var R = S.run; if (!R || R.att.status === 'submitted') return;
-  var gone = document.hidden || !document.hasFocus();
-  if (gone && !S.away) {
-    S.away = true; S.awaySince = Date.now(); R.att.status = 'away';
-    logEv('leave', { r: document.hidden ? 'hidden' : 'blur' });
-  } else if (!gone && S.away) {
+  if (isGone()) {
+    // เริ่มจับเวลา ยังไม่นับจนกว่าจะหายเกินค่าที่กำหนด
+    if (!S.away && !presenceTm) {
+      S.awaySince = Date.now();
+      var r = document.hidden ? 'hidden' : 'blur';
+      presenceTm = setTimeout(function () { confirmLeave(r); }, PRESENCE_MS);
+    }
+    return;
+  }
+  if (presenceTm) {
+    // กลับมาก่อนครบเวลา: ไม่นับเป็นออก แต่บันทึกไว้ให้ครูดูย้อนหลังได้
+    clearTimeout(presenceTm); presenceTm = null;
+    logEv('quick', { at: S.awaySince, d: Date.now() - S.awaySince });
+    return;
+  }
+  if (S.away) {
     S.away = false; var d = Date.now() - S.awaySince; R.att.status = 'doing';
-    var evs = R.att.events, last = evs[evs.length - 1];
-    if (last && last.t === 'leave' && last.r === 'blur' && d < 1000) { evs.pop(); queueFlush(800); return; }
     logEv('return', { d: d });
     if (R.att.proctor && !R.preview) { R.notice = 'ระบบบันทึกว่าคุณออกจากหน้าสอบ ' + dur(d) + ' (ตั้งแต่เวลา ' + clock(S.awaySince) + ') ครูสามารถดูรายการนี้ได้'; render(); }
   }
@@ -580,6 +601,7 @@ function evLabel(e) {
     case 'leave': return [e.r === 'hidden' ? 'ออกจากหน้าสอบ (สลับแอป แท็บ พับจอ หรือปิดแอป)' : 'หน้าต่างสอบเสียโฟกัส (มีหน้าต่างอื่นทับ)', 1];
     case 'return': return ['กลับเข้าหน้าสอบ' + (e.d != null ? ' · ออกไป ' + dur(e.d) : ''), 0];
     case 'fs_exit': return ['ออกจากโหมดเต็มจอ', 1];
+    case 'quick': return ['กลับเข้าหน้าสอบภายใน 5 วินาที (ไม่นับเป็นออก)', 0];
     case 'copy': return ['พยายามคัดลอกข้อความ', 1];
     case 'paste': return ['พยายามวางข้อความ', 1];
     case 'menu': return ['คลิกขวา', 1];
