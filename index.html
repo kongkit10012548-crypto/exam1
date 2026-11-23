@@ -53,7 +53,7 @@ svg{flex:none}
 .boot{min-height:100vh;display:grid;place-items:center;align-content:center;gap:10px;text-align:center}
 
 /* แถบล่างบนมือถือ (ผู้สอน) */
-.tabbar{position:fixed;left:12px;right:12px;bottom:calc(10px + env(safe-area-inset-bottom,0px));z-index:25;display:grid;grid-template-columns:repeat(3,1fr);background:#fff;border:1px solid var(--rule);border-radius:20px;box-shadow:0 8px 28px rgba(20,40,28,.14);padding:6px}
+.tabbar{position:fixed;left:12px;right:12px;bottom:calc(10px + env(safe-area-inset-bottom,0px));z-index:25;display:grid;grid-template-columns:repeat(4,1fr);background:#fff;border:1px solid var(--rule);border-radius:20px;box-shadow:0 8px 28px rgba(20,40,28,.14);padding:6px}
 .tab{border:0;background:transparent;padding:6px 4px;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted);border-radius:14px;display:flex;flex-direction:column;align-items:center;gap:2px;min-height:54px;justify-content:center}
 .tab[aria-current="page"]{background:var(--accent-soft);color:var(--accent-d)}
 .tab:disabled{opacity:.4}
@@ -407,7 +407,74 @@ body:has(.xm){background:#F2F7F4;padding:0}
   .xm-avatar{display:none}
   .xm-btn{font-size:16px}
 }
+
+/* ===== ตรวจงาน ===== */
+.bk-exp{display:flex;gap:8px;flex-wrap:wrap}
+.bk-tools{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
+.bk-empty{text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px;padding:40px 20px}
+.bk-empty>svg{width:44px;height:44px;color:var(--accent)}
+.bk-chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 14px}
+.chip{border:1px solid var(--rule-2);background:#fff;border-radius:999px;padding:5px 14px;font-size:14px;cursor:pointer;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip.on{background:var(--accent-soft);border-color:#9FD7B5;color:var(--accent-d);font-weight:600}
+.bk-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+@media (min-width:760px){.bk-stats{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.bk-legend{margin:-4px 0 10px}
+.bk-scroll{overflow-x:auto;padding:0}
+.tbl.bk{border-collapse:separate;border-spacing:0;min-width:100%}
+.tbl.bk thead,.tbl.bk tbody,.tbl.bk tfoot{display:table-row-group}
+.tbl.bk thead{display:table-header-group}
+.tbl.bk tfoot{display:table-footer-group}
+.tbl.bk tr{display:table-row;padding:0;border:0}
+.tbl.bk th,.tbl.bk td{display:table-cell;padding:8px 10px;white-space:nowrap;font-size:14px;border-bottom:1px solid var(--rule);vertical-align:middle;background:#fff}
+.tbl.bk td::before{content:none}
+.tbl.bk tbody tr{cursor:default}
+.tbl.bk tbody tr:hover td{background:#F7FBF8}
+.tbl.bk th{vertical-align:bottom;background:var(--surface-2)}
+.tbl.bk .bk-no{position:sticky;left:0;z-index:2;width:56px;text-align:center}
+.tbl.bk .bk-name{position:sticky;left:56px;z-index:2;min-width:170px;max-width:240px;overflow:hidden;text-overflow:ellipsis;box-shadow:6px 0 8px -8px rgba(20,40,28,.25)}
+.tbl.bk th.bk-no,.tbl.bk th.bk-name{z-index:3}
+.bk-col{min-width:118px;max-width:170px;white-space:normal!important}
+.bk-ct{font-weight:700;color:var(--ink);font-size:13px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:normal}
+.bk-tag{display:inline-block;margin-top:4px;font-size:11px;font-weight:600;padding:1px 8px;border-radius:999px;background:#FFF3D6;color:#9A5B00}
+.bk-tag.ex{background:#E2EEFD;color:#1D5FC4}
+.bk-colact{display:flex;gap:4px;margin-top:6px;flex-wrap:wrap}
+.bk-colact button{border:1px solid var(--rule-2);background:#fff;border-radius:8px;font-size:11px;padding:1px 6px;cursor:pointer;color:var(--muted)}
+.bk-colact button:hover{border-color:var(--accent);color:var(--accent-d)}
+.bk-c{text-align:center}
+.bk-pill{display:inline-flex;align-items:center;justify-content:center;gap:4px;min-width:84px;min-height:34px;padding:2px 10px;border-radius:999px;border:1px dashed var(--rule-2);background:#fff;font-size:13px;font-weight:600;color:var(--muted);font-family:inherit}
+button.bk-pill{cursor:pointer}
+button.bk-pill:hover{border-color:var(--accent)}
+.bk-c.sent .bk-pill{background:var(--accent-soft);border:1px solid #9FD7B5;color:var(--accent-d)}
+.bk-c.late .bk-pill{background:#FEF3E0;border:1px solid #F6D59A;color:#9A5B00}
+.bk-c.miss .bk-pill{background:var(--bad-soft);border:1px solid #F2B8B2;color:var(--bad)}
+.bk-c.doing .bk-pill{background:#E6F0FD;border:1px solid #B9D3F7;color:#1D5FC4}
+.bk-sum{text-align:center;font-size:15px}
+.tbl.bk tfoot td{background:var(--surface-2);font-size:13px;border-bottom:0}
+#printArea{display:none}
+@media print{
+  @page{size:A4 landscape;margin:10mm}
+  body.printing{background:#fff!important}
+  body.printing #app,body.printing #toast,body.printing .tabbar{display:none!important}
+  body.printing #printArea{display:block;color:#000;font:12px/1.45 'Sarabun',sans-serif}
+  #printArea h1{font-size:19px;margin:0}
+  #printArea h2{font-size:15px;margin:14px 0 6px}
+  #printArea .pr-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:10px}
+  #printArea .pr-head p{color:#444;margin-top:2px}
+  #printArea .pr-box{border:1px solid #999;border-radius:8px;padding:6px 12px;text-align:right;font-size:12px}
+  #printArea table.pr{width:100%;border-collapse:collapse;table-layout:auto}
+  #printArea .pr th,#printArea .pr td{border:1px solid #888;padding:3px 5px;text-align:center;font-size:11px}
+  #printArea .pr th{background:#E8F3EC;-webkit-print-color-adjust:exact;print-color-adjust:exact;font-weight:700}
+  #printArea .pr td.nm{text-align:left;white-space:nowrap}
+  #printArea .pr td.no{color:#B42318;font-weight:700}
+  #printArea .pr td.late{color:#9A5B00}
+  #printArea .pr td.ok{color:#0E7C45}
+  #printArea .pr tfoot td{background:#F3F6F4;font-weight:700;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  #printArea .pr tr{break-inside:avoid}
+  #printArea .pr-miss{margin:0;padding-left:20px;columns:2;column-gap:24px}
+  #printArea .pr-miss li{break-inside:avoid;margin-bottom:2px}
+  #printArea .pr-sign{margin-top:28px;text-align:right}
+}
 </style>
-<script src="app.js?v=20261115a"></script>
+<script src="app.js?v=20261123a"></script>
 </body>
 </html>
