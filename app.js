@@ -814,11 +814,38 @@ function bookExams(room) {
   return all.filter(function (e) { return sel.indexOf(e.id) >= 0; });
 }
 function normN(s) { return String(s || '').replace(/\s+/g, '').trim(); }
-function examCell(ex, st) {
-  var a = null;
-  for (var i = 0; i < S.attempts.length; i++) { var x = S.attempts[i]; if (x.examId === ex.id && String(x.no) === String(st.no)) { a = x; break; } }
+/* จับคู่ผลข้อสอบกับรายชื่อ: ครูจับคู่เอง > ชื่อตรงกัน > ชื่อต้นตรงกัน > เลขที่ตรงกัน */
+var PREFIX_RE = /^(นางสาว|น\.ส\.|นส\.?|นาง|นาย|เด็กชาย|เด็กหญิง|ด\.ช\.|ด\.ญ\.|mr\.?|ms\.?|miss|mrs\.?)\s*/i;
+function nameKey(s) { return String(s || '').trim().replace(PREFIX_RE, '').replace(/\s+/g, '').toLowerCase(); }
+function firstKey(s) { return (String(s || '').trim().replace(PREFIX_RE, '').split(/\s+/)[0] || '').toLowerCase(); }
+function attKey(a) { return a.examId + '|' + a.no + '|' + nameKey(a.name); }
+function getLinks() { try { return JSON.parse(get('hs.bookLink') || '{}') || {}; } catch (e) { return {}; } }
+function rankAtt(a) { return a.status === 'submitted' ? 3 : a.status === 'doing' || a.status === 'away' ? 2 : 1; }
+function matchExam(ex, studs) {
+  var atts = S.attempts.filter(function (x) { return x.examId === ex.id; });
+  var links = getLinks(), map = {}, how = {}, used = [];
+  var put2 = function (st, a, h) {
+    var cur = map[st.no];
+    if (cur && rankAtt(cur) >= rankAtt(a)) { used.push(a); return; }
+    map[st.no] = a; how[st.no] = h; used.push(a);
+  };
+  var byNo = {}; studs.forEach(function (st) { byNo[String(Number(st.no))] = st; });
+  // 1) ครูจับคู่เอง
+  atts.forEach(function (a) { var n = links[attKey(a)]; if (n != null && byNo[String(n)]) put2(byNo[String(n)], a, 'link'); });
+  var rest = function () { return atts.filter(function (a) { return used.indexOf(a) < 0; }); };
+  // 2) ชื่อ-สกุลตรงกัน (ไม่สนคำนำหน้าและช่องว่าง)
+  rest().forEach(function (a) { var k = nameKey(a.name); var hit = studs.filter(function (st) { return nameKey(st.name) === k; }); if (k && hit.length === 1) put2(hit[0], a, 'name'); });
+  // 3) ชื่อต้นตรงกันคนเดียว
+  rest().forEach(function (a) { var k = firstKey(a.name); var hit = studs.filter(function (st) { return k && firstKey(st.name) === k && !map[st.no]; }); if (hit.length === 1) put2(hit[0], a, 'first'); });
+  // 4) เลขที่ตรงกัน (ช่องยังว่าง)
+  rest().forEach(function (a) { var st = byNo[String(Number(a.no))]; if (st && !map[st.no]) put2(st, a, 'no'); });
+  return { map: map, how: how, unmatched: rest() };
+}
+function examCellM(ex, st, M) {
+  var a = M.map[st.no];
   if (!a) return { k: 'miss', t: 'ไม่ส่ง', x: 'ไม่ส่ง', sent: false };
-  var warn = normN(a.name) !== normN(st.name) ? 'ชื่อในข้อสอบ: ' + a.name : '';
+  var h = M.how[st.no];
+  var warn = h === 'no' && nameKey(a.name) !== nameKey(st.name) ? 'จับคู่จากเลขที่ · ชื่อในข้อสอบ: ' + a.name : h === 'first' ? 'จับคู่จากชื่อต้น · ในข้อสอบ: เลขที่ ' + a.no + ' ' + a.name : '';
   if (a.status === 'submitted') {
     var sc = scoreOf(a, ex, S.keys[ex.id]);
     var txt = sc ? sc.s + '/' + sc.max : 'ส่งแล้ว';
@@ -826,12 +853,25 @@ function examCell(ex, st) {
   }
   return { k: 'doing', t: a.status === 'waiting' ? 'ห้องรอ' : 'กำลังทำ', x: 'ยังไม่ส่ง', sent: false, warn: warn };
 }
+function examCell(ex, st) { return examCellM(ex, st, matchExam(ex, [st])); }
+function unmatchedHTML(room, M) {
+  var studs = bookStudents(room);
+  var blocks = M.cols.filter(function (c) { return c.type === 'exam' && c.match.unmatched.length; }).map(function (c) {
+    var rows = c.match.unmatched.sort(function (a, b) { return Number(a.no) - Number(b.no); }).map(function (a) {
+      var opts = '<option value="">— เลือกนักเรียน —</option>' + studs.map(function (st) { var taken = c.match.map[st.no]; return '<option value="' + esc(st.no) + '">' + esc(st.no + '. ' + st.name) + (taken ? ' (มีผลแล้ว)' : '') + '</option>'; }).join('');
+      return '<tr><td>' + esc(a.no) + '</td><td class="wide">' + esc(a.name) + '</td><td>' + (a.status === 'submitted' ? '<span class="state done">ส่งแล้ว</span>' : '<span class="state doing">ยังไม่ส่ง</span>') + '</td><td><select class="bk-link" data-key="' + esc(attKey(a)) + '" aria-label="จับคู่กับนักเรียน">' + opts + '</select></td></tr>';
+    }).join('');
+    return '<h3 class="bk-uh">' + esc(c.title) + ' <span class="muted small">(' + c.match.unmatched.length + ' รายการ)</span></h3><table class="tbl bk-un"><thead><tr><th>เลขที่ที่กรอก</th><th>ชื่อที่กรอกในข้อสอบ</th><th>สถานะ</th><th>เป็นของนักเรียนคนไหน</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }).join('');
+  if (!blocks) return '';
+  return '<section class="card bk-unbox"><h2>ผลสอบที่ยังจับคู่กับรายชื่อไม่ได้</h2><p class="muted small">นักเรียนกลุ่มนี้ทำข้อสอบแล้ว แต่เลขที่และชื่อที่กรอกไม่ตรงกับรายชื่อในห้องนี้ เลือกชื่อที่ถูกต้องเพื่อจับคู่ ระบบจะจำไว้ในเบราว์เซอร์นี้ (ถ้าเป็นนักเรียนห้องอื่น ปล่อยว่างไว้ได้)</p>' + blocks + '</section>';
+}
 function bookMatrix(room) {
   var studs = bookStudents(room), exs = bookExams(room), tks = bookTasks(room);
-  var cols = exs.map(function (e) { return { type: 'exam', id: e.id, title: e.title, ex: e }; }).concat(tks.map(function (t) { return { type: 'task', id: t.id, title: t.title, due: t.due, task: t }; }));
+  var cols = exs.map(function (e) { return { type: 'exam', id: e.id, title: e.title, ex: e, match: matchExam(e, studs) }; }).concat(tks.map(function (t) { return { type: 'task', id: t.id, title: t.title, due: t.due, task: t }; }));
   var rows = studs.map(function (st) {
     var cells = cols.map(function (c) {
-      if (c.type === 'exam') return examCell(c.ex, st);
+      if (c.type === 'exam') return examCellM(c.ex, st, c.match);
       var m = markOf(c.id, st.no);
       return { k: m || 'none', t: m ? MARKS[m][0] : '—', x: m ? MARKS[m][0] : '', sent: m === 'sent' || m === 'late', mark: m };
     });
@@ -873,8 +913,10 @@ function bookHTML() {
   var foot = '<tr><td></td><td class="bk-name"><b>ส่งแล้ว (คน)</b></td>' + M.cols.map(function (c, ci) { var n = M.rows.filter(function (r) { return r.cells[ci].sent; }).length; return '<td class="bk-c"><b>' + n + '</b>/' + M.rows.length + '</td>'; }).join('') + '<td></td></tr>';
   var miss = M.rows.filter(function (r) { return r.sent < M.cols.length; }).length;
   var stats = '<div class="sumrow bk-stats"><div class="sum"><b>' + M.rows.length + '</b><span>นักเรียน</span></div><div class="sum"><b>' + M.cols.length + '</b><span>งาน + ข้อสอบ</span></div><div class="sum"><b>' + (M.rows.length - miss) + '</b><span>ส่งครบทุกงาน</span></div><div class="sum"><b style="color:var(--bad)">' + miss + '</b><span>ยังส่งไม่ครบ</span></div></div>';
-  var legend = '<p class="hint bk-legend">แตะช่องงานเพื่อเปลี่ยนสถานะ: ว่าง → ✓ ส่งแล้ว → ส่งช้า → ✗ ไม่ส่ง → ว่าง · ช่องข้อสอบดึงจากระบบอัตโนมัติ · * ชื่อที่กรอกในข้อสอบไม่ตรงกับรายชื่อ</p>';
-  return head + err + tools + chips + stats + legend + '<div class="tablewrap bk-scroll"><table class="tbl bk"><thead><tr>' + th + '</tr></thead><tbody>' + body + '</tbody><tfoot>' + foot + '</tfoot></table></div>';
+  var legend = '<p class="hint bk-legend">แตะช่องงานเพื่อเปลี่ยนสถานะ: ว่าง → ✓ ส่งแล้ว → ส่งช้า → ✗ ไม่ส่ง → ว่าง · ช่องข้อสอบดึงจากระบบอัตโนมัติ · * จับคู่จากเลขที่หรือชื่อต้น ให้ตรวจซ้ำ (ชี้ที่ช่องเพื่อดูชื่อที่กรอก)</p>';
+  var unm = unmatchedHTML(room, M), unN = M.cols.reduce(function (n, c) { return n + (c.match ? c.match.unmatched.length : 0); }, 0);
+  if (unN) legend += '<div class="notice" style="margin-bottom:12px">มีผลสอบ ' + unN + ' รายการที่ยังหาเจ้าของในรายชื่อไม่เจอ ดูและจับคู่ได้ที่ด้านล่างตาราง</div>';
+  return head + err + tools + chips + stats + legend + '<div class="tablewrap bk-scroll"><table class="tbl bk"><thead><tr>' + th + '</tr></thead><tbody>' + body + '</tbody><tfoot>' + foot + '</tfoot></table></div>' + unm;
 }
 function fmtDue(d) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || ''); if (!m) return d || ''; return new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }); }
 function bookPanelHTML(room) {
@@ -1257,6 +1299,7 @@ app.addEventListener('change', function (e) {
     var y = window.scrollY; render(); window.scrollTo(0, y);
     setSave('saving'); queueFlush(1200);
   }
+  if (t.classList && t.classList.contains('bk-link')) { var L = getLinks(), key = t.getAttribute('data-key'); if (t.value) L[key] = t.value; else delete L[key]; put('hs.bookLink', JSON.stringify(L)); var yy = window.scrollY; render(); window.scrollTo(0, yy); toast(t.value ? 'จับคู่แล้ว' : 'ยกเลิกการจับคู่แล้ว'); }
   if (t.id === 'bk-room') { S.bookRoom = t.value; render(); }
   if (t.id === 'sel-exam') { S.examSel = t.value; S.detail = null; renderLiveParts(); }
   if (t.getAttribute('data-k') === 'ans') { var D = S.editing; if (D && t.checked) D.questions[+t.getAttribute('data-qi')].ans = +t.getAttribute('data-ci'); }
