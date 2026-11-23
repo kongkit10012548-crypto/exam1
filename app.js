@@ -885,7 +885,7 @@ function bookHTML() {
   if (!S.bookRoom || rooms.indexOf(S.bookRoom) < 0) S.bookRoom = rooms[0] || '';
   var room = S.bookRoom;
   var head = '<div class="head"><div><p class="hero-kick">ตรวจงาน</p><h1 style="margin-top:6px">ตรวจการส่ง<em>งานของนักเรียน</em></h1><p>รวมผลข้อสอบในระบบกับงานที่ครูติ๊กเอง แล้วส่งออกเป็น Excel หรือ PDF</p></div>' +
-    (room ? '<div class="bk-exp"><button class="btn ghost sm" data-act="bkxlsx">ดาวน์โหลด Excel</button><button class="btn accent sm" data-act="bkpdf">พิมพ์ / บันทึก PDF</button></div>' : '') + '</div>';
+    (room ? '<div class="bk-exp"><button class="btn accent sm" data-act="bkform">กรอกลงใบรายชื่อ (PDF)</button><button class="btn ghost sm" data-act="bkxlsx">ดาวน์โหลด Excel</button><button class="btn ghost sm" data-act="bkpdf">พิมพ์สรุป</button></div>' : '') + '</div>';
   var err = S.bookErr ? '<div class="notice bad" style="margin-bottom:14px">' + esc(S.bookErr) + '</div>' : '';
   var panel = bookPanelHTML(room);
   if (!rooms.length && !S.bookPanel) {
@@ -920,6 +920,7 @@ function bookHTML() {
 }
 function fmtDue(d) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || ''); if (!m) return d || ''; return new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }); }
 function bookPanelHTML(room) {
+  if (S.bookPanel === 'form') return formPanelHTML(room);
   if (S.bookPanel === 'roster' || S.bookPanel === 'rosterNew') {
     var isNew = S.bookPanel === 'rosterNew';
     var txt = isNew ? '' : bookStudents(room).map(function (s) { return s.no + '\t' + s.name; }).join('\n');
@@ -940,6 +941,92 @@ function bookPanelHTML(room) {
       '<div class="row"><button class="btn accent" data-act="bktasksave" data-id="' + (t ? t.id : '') + '"' + (S.bookBusy ? ' disabled' : '') + '>' + (S.bookBusy ? 'กำลังบันทึก…' : 'บันทึกงาน') + '</button><button class="btn ghost" data-act="bkclose">ยกเลิก</button>' + delT + '</div></section>';
   }
   return '';
+}
+
+/* ---------- กรอกเครื่องหมายลงไฟล์ใบรายชื่อต้นฉบับ (ไม่แก้ส่วนอื่นของไฟล์) ---------- */
+// ตำแหน่งตารางของแบบฟอร์มวิทยาลัย (หน่วย pt วัดจากขอบบนของหน้า A4)
+var FORM = { x0: 275, colW: 15, cols: 20, top0: 139, rowH: 16, rows: 42, perPage: [41, 42] };
+var FORM_BYTES = null;
+function formStoreKey() { return 'hs.formPdf'; }
+function formSavedName() { return get('hs.formPdfName') || ''; }
+function formMapKey(room) { return 'hs.formMap.' + room; }
+function formOpts() { var o = {}; try { o = JSON.parse(get('hs.formOpt') || '{}') || {}; } catch (e) {} return { exam: o.exam || 'score', miss: o.miss || 'x' }; }
+function formMap(room, cols) {
+  var m = {}; try { m = JSON.parse(get(formMapKey(room)) || '{}') || {}; } catch (e) {}
+  var used = {}; cols.forEach(function (c) { if (m[c.id] != null && m[c.id] !== '') used[m[c.id]] = 1; });
+  var next = 1;
+  cols.forEach(function (c) { if (m[c.id] === undefined) { while (used[next]) next++; if (next <= FORM.cols) { m[c.id] = next; used[next] = 1; } else m[c.id] = ''; } });
+  return m;
+}
+function formPanelHTML(room) {
+  var M = bookMatrix(room), map = formMap(room, M.cols), o = formOpts(), fn = formSavedName() || (FORM_BYTES ? 'ไฟล์ที่เลือกไว้' : '');
+  var colOpts = function (v) { var h = '<option value="">ไม่ใส่</option>'; for (var i = 1; i <= FORM.cols; i++) h += '<option value="' + i + '"' + (String(v) === String(i) ? ' selected' : '') + '>ช่องที่ ' + i + '</option>'; return h; };
+  var rows = M.cols.map(function (c) { return '<div class="fm-row"><span class="fm-t"><span class="bk-tag' + (c.type === 'exam' ? ' ex' : '') + '">' + (c.type === 'exam' ? 'ข้อสอบ' : 'งาน') + '</span> ' + esc(c.title) + '</span><select class="fm-col" data-id="' + esc(c.id) + '" aria-label="ช่องสำหรับ ' + esc(c.title) + '">' + colOpts(map[c.id]) + '</select></div>'; }).join('');
+  return '<section class="card stack"><h2>กรอกลงใบรายชื่อของวิทยาลัย</h2><p class="muted">ระบบจะใส่เครื่องหมายลงในช่องตารางว่างของไฟล์ใบรายชื่อต้นฉบับเท่านั้น ส่วนอื่นของไฟล์ไม่ถูกแก้ไข ใช้ลำดับที่ในใบรายชื่อเป็นตัวจับคู่แถว</p>' +
+    '<div class="fm-file"><label class="btn ghost sm" for="fm-pdf">เลือกไฟล์ใบรายชื่อ (PDF)</label><input id="fm-pdf" type="file" accept="application/pdf" hidden><span class="muted small">' + (fn ? 'ใช้ไฟล์: ' + esc(fn) : 'ยังไม่ได้เลือกไฟล์ (เลือกครั้งเดียว ระบบจำไว้ในเครื่องนี้)') + '</span></div>' +
+    '<div><h3 style="margin-bottom:8px">งานแต่ละรายการลงช่องไหน</h3><p class="hint" style="margin-bottom:8px">นับช่องตารางว่างจากซ้ายไปขวา ช่องที่ 1 คือช่องแรกถัดจากชื่อ-สกุล</p>' + (rows || '<p class="muted">ยังไม่มีงานหรือข้อสอบในตาราง</p>') + '</div>' +
+    '<div class="row"><label class="field"><span>ช่องข้อสอบที่ส่งแล้ว ใส่</span><select id="fm-exam"><option value="score"' + (o.exam === 'score' ? ' selected' : '') + '>คะแนนที่ได้ (เช่น 15)</option><option value="check"' + (o.exam === 'check' ? ' selected' : '') + '>เครื่องหมาย ✓</option></select></label>' +
+    '<label class="field"><span>คนที่ไม่ส่ง ใส่</span><select id="fm-miss"><option value="x"' + (o.miss === 'x' ? ' selected' : '') + '>เครื่องหมาย ✗</option><option value="blank"' + (o.miss === 'blank' ? ' selected' : '') + '>เว้นว่าง</option><option value="zero"' + (o.miss === 'zero' ? ' selected' : '') + '>เลข 0</option></select></label></div>' +
+    '<p class="hint">งานที่ครูติ๊ก: ส่งแล้วและส่งช้าใส่ ✓ · ไม่ส่งใส่ตามที่เลือกด้านบน · ช่องที่ยังไม่ได้ติ๊กเว้นว่าง</p>' +
+    '<div class="row"><button class="btn accent" data-act="fmmake"' + (S.bookBusy ? ' disabled' : '') + '>' + (S.bookBusy ? 'กำลังสร้างไฟล์…' : 'สร้างไฟล์ PDF') + '</button><button class="btn ghost" data-act="bkclose">ปิด</button></div></section>';
+}
+function b64ToBytes(b) { var s = atob(b), u = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; }
+function bytesToB64(u) { var s = '', ch = 0x8000; for (var i = 0; i < u.length; i += ch) s += String.fromCharCode.apply(null, u.subarray(i, i + ch)); return btoa(s); }
+async function formPick(file) {
+  if (!file) return;
+  var buf = new Uint8Array(await file.arrayBuffer());
+  FORM_BYTES = buf;
+  try { localStorage.setItem(formStoreKey(), bytesToB64(buf)); put('hs.formPdfName', file.name); } catch (e) { put('hs.formPdfName', ''); toast('ไฟล์ใหญ่เกินกว่าจะจำไว้ จะใช้ได้จนกว่าจะปิดหน้านี้'); }
+  render();
+}
+function formBytes() {
+  if (FORM_BYTES) return FORM_BYTES;
+  try { var b = localStorage.getItem(formStoreKey()); if (b) { FORM_BYTES = b64ToBytes(b); return FORM_BYTES; } } catch (e) {}
+  return null;
+}
+function formCellPos(no, col) {
+  var n = Number(no), page, row;
+  if (n <= FORM.perPage[0]) { page = 0; row = n - 1; } else { page = 1; row = n - FORM.perPage[0] - 1; }
+  if (row < 0 || row >= FORM.rows) return null;
+  return { page: page, cx: FORM.x0 + (col - 0.5) * FORM.colW, cyTop: FORM.top0 + (row + 0.5) * FORM.rowH };
+}
+async function formMake() {
+  var room = S.bookRoom, bytes = formBytes();
+  if (!bytes) { toast('กรุณาเลือกไฟล์ใบรายชื่อ (PDF) ก่อน'); return; }
+  var M = bookMatrix(room), map = formMap(room, M.cols), o = formOpts();
+  S.bookBusy = true; render();
+  try {
+    if (!window.PDFLib) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js');
+    var L = window.PDFLib, doc = await L.PDFDocument.load(bytes), pages = doc.getPages();
+    var font = await doc.embedFont(L.StandardFonts.HelveticaBold), ink = L.rgb(0.05, 0.15, 0.45);
+    var check = function (pg, cx, cy) { pg.drawLine({ start: { x: cx - 4, y: cy }, end: { x: cx - 1.2, y: cy - 3.4 }, thickness: 1.3, color: ink }); pg.drawLine({ start: { x: cx - 1.2, y: cy - 3.4 }, end: { x: cx + 4.4, y: cy + 4 }, thickness: 1.3, color: ink }); };
+    var cross = function (pg, cx, cy) { var r = 3.3, red = L.rgb(0.72, 0.1, 0.1); pg.drawLine({ start: { x: cx - r, y: cy - r }, end: { x: cx + r, y: cy + r }, thickness: 1.2, color: red }); pg.drawLine({ start: { x: cx - r, y: cy + r }, end: { x: cx + r, y: cy - r }, thickness: 1.2, color: red }); };
+    var text = function (pg, cx, cy, t) { var size = t.length > 2 ? 6.5 : 8.5, w = font.widthOfTextAtSize(t, size); pg.drawText(t, { x: cx - w / 2, y: cy - size * 0.36, size: size, font: font, color: ink }); };
+    var placed = 0, skipped = [];
+    M.rows.forEach(function (r) {
+      M.cols.forEach(function (c, ci) {
+        var col = Number(map[c.id]); if (!col) return;
+        var pos = formCellPos(r.st.no, col);
+        if (!pos || !pages[pos.page]) { if (skipped.indexOf(r.st.no) < 0) skipped.push(r.st.no); return; }
+        var pg = pages[pos.page], cy = pg.getHeight() - pos.cyTop, cell = r.cells[ci];
+        if (c.type === 'exam') {
+          if (cell.sent) { if (o.exam === 'score' && /^\d+(\.\d+)?\/\d+/.test(cell.t)) text(pg, pos.cx, cy, cell.t.split('/')[0]); else check(pg, pos.cx, cy); }
+          else if (o.miss === 'x') cross(pg, pos.cx, cy); else if (o.miss === 'zero') text(pg, pos.cx, cy, '0');
+        } else {
+          if (cell.mark === 'sent' || cell.mark === 'late') check(pg, pos.cx, cy);
+          else if (cell.mark === 'miss') { if (o.miss === 'x') cross(pg, pos.cx, cy); else if (o.miss === 'zero') text(pg, pos.cx, cy, '0'); }
+          else return;
+        }
+        placed++;
+      });
+    });
+    var out = await doc.save();
+    var url = URL.createObjectURL(new Blob([out], { type: 'application/pdf' }));
+    var a = document.createElement('a'); a.href = url; a.download = 'ใบรายชื่อ-' + room.replace(/[\\/:*?"<>|]/g, '-') + '.pdf'; document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 1500);
+    toast('สร้างไฟล์แล้ว ใส่เครื่องหมาย ' + placed + ' ช่อง' + (skipped.length ? ' (ไม่มีแถวในแบบฟอร์มสำหรับเลขที่ ' + skipped.join(', ') + ')' : ''));
+  } catch (e) { toast('สร้างไฟล์ไม่สำเร็จ ตรวจว่าเป็นไฟล์ใบรายชื่อ PDF ที่ถูกต้อง'); }
+  S.bookBusy = false; render();
 }
 function parseRoster(text) {
   var out = [], seen = {};
@@ -1247,6 +1334,8 @@ function act(a, b) {
     case 'bkex': bookToggleExam(id); break;
     case 'bkxlsx': bookExcel(); break;
     case 'bkpdf': bookPdf(); break;
+    case 'bkform': S.bookPanel = 'form'; render(); window.scrollTo(0, 0); break;
+    case 'fmmake': formMake(); break;
     case 'bkroomdel': S.confirmRoom = true; render(); break;
     case 'bkroomdelno': S.confirmRoom = false; render(); break;
     case 'bkroomdelyes':
@@ -1300,6 +1389,9 @@ app.addEventListener('change', function (e) {
     setSave('saving'); queueFlush(1200);
   }
   if (t.classList && t.classList.contains('bk-link')) { var L = getLinks(), key = t.getAttribute('data-key'); if (t.value) L[key] = t.value; else delete L[key]; put('hs.bookLink', JSON.stringify(L)); var yy = window.scrollY; render(); window.scrollTo(0, yy); toast(t.value ? 'จับคู่แล้ว' : 'ยกเลิกการจับคู่แล้ว'); }
+  if (t.id === 'fm-pdf') formPick(t.files && t.files[0]);
+  if (t.classList && t.classList.contains('fm-col')) { var fmR = S.bookRoom, fm = {}; try { fm = JSON.parse(get(formMapKey(fmR)) || '{}') || {}; } catch (e2) {} var dup = t.value; if (dup) Object.keys(fm).forEach(function (k) { if (String(fm[k]) === dup && k !== t.getAttribute('data-id')) fm[k] = ''; }); var cur = formMap(fmR, bookMatrix(fmR).cols); Object.keys(cur).forEach(function (k) { if (fm[k] === undefined) fm[k] = cur[k]; }); fm[t.getAttribute('data-id')] = t.value; put(formMapKey(fmR), JSON.stringify(fm)); render(); }
+  if (t.id === 'fm-exam' || t.id === 'fm-miss') { var fo = formOpts(); fo[t.id === 'fm-exam' ? 'exam' : 'miss'] = t.value; put('hs.formOpt', JSON.stringify(fo)); }
   if (t.id === 'bk-room') { S.bookRoom = t.value; render(); }
   if (t.id === 'sel-exam') { S.examSel = t.value; S.detail = null; renderLiveParts(); }
   if (t.getAttribute('data-k') === 'ans') { var D = S.editing; if (D && t.checked) D.questions[+t.getAttribute('data-qi')].ans = +t.getAttribute('data-ci'); }
