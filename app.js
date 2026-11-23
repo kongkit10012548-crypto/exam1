@@ -23,6 +23,8 @@ function put(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 
 function msgOf(code) {
   var m = {
+    empty_roster: 'ไม่พบรายชื่อที่ถูกต้อง',
+    bad_room: 'ชื่อห้องไม่ถูกต้อง',
     config: 'ยังไม่ได้ตั้งค่าที่อยู่ระบบ (API_URL) ในไฟล์ app.js',
     network: 'เชื่อมต่อไม่ได้ ตรวจอินเทอร์เน็ตแล้วลองอีกครั้ง',
     closed: 'ข้อสอบนี้ปิดรับแล้ว',
@@ -49,7 +51,8 @@ var S = {
   who: { name: '', no: '' },
   run: null, writing: false, again: false,
   examSel: null, detail: null, confirmReset: null, confirmDel: null, editing: null, editErr: null, saving: false,
-  away: false, awaySince: 0, lastBlock: {}, tm: null, retry: null, lobby: null, starting: false
+  away: false, awaySince: 0, lastBlock: {}, tm: null, retry: null, lobby: null, starting: false,
+  book: { roster: [], tasks: [], marks: [] }, bookSig: '', bookRoom: '', bookPanel: null, bookErr: '', bookBusy: false, confirmRoom: false, confirmTask: null
 };
 try { var j0 = JSON.parse(get('omr.who') || 'null'); if (j0 && typeof j0 === 'object') { S.who.name = String(j0.name || ''); S.who.no = String(j0.no || ''); } } catch (e) {}
 
@@ -118,6 +121,7 @@ async function poll() {
   var ch = await loadExams();
   if (!S.run && S.area === 'student' && S.step === 'list') { if (await loadStatus()) ch = true; }
   if (S.isTeacher) { if (await loadTeacher()) ch = true; }
+  if (S.isTeacher && S.area === 'book' && !S.bookPanel) { if (await loadBook()) ch = true; }
   if (ch) refreshView();
   checkLobby();
 }
@@ -133,6 +137,7 @@ function refreshView() {
   if (S.area === 'login') return;
   if (S.area === 'live') { if (!document.getElementById('liveBody')) render(); else renderLiveParts(); }
   else if (S.area === 'exams') render();
+  else if (S.area === 'book') { if (!S.bookPanel) { var y = window.scrollY, bs = document.querySelector('.bk-scroll'), bx = bs ? bs.scrollLeft : 0; render(); window.scrollTo(0, y); var bs2 = document.querySelector('.bk-scroll'); if (bs2) bs2.scrollLeft = bx; } }
   else if (S.area === 'student' && S.step === 'list' && whoOk()) {
     if (S.lobby) { render(); return; }
     render();
@@ -162,6 +167,7 @@ function render() {
   if (S.err) h += '<div class="notice bad" style="margin-bottom:16px">' + esc(msgOf(S.err)) + '</div>';
   if (S.area === 'login') h += loginHTML();
   else if (S.area === 'live') h += liveHTML();
+  else if (S.area === 'book') h += bookHTML();
   else if (S.area === 'exams') h += S.editing ? editorHTML() : examsHTML();
   else if (S.step !== 'list' || !whoOk()) h += nameHTML();
   else h += S.lobby ? lobbyHTML() : homeHTML();
@@ -173,6 +179,7 @@ function fatalHTML() {
   return shellHTML('<section class="card" style="max-width:560px"><h2 style="margin-bottom:8px">ยังไม่สามารถเข้าระบบสอบได้</h2><p class="muted">' + msgOf(S.fatal) + '</p></section>', true);
 }
 var NI = {
+  check: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V2.5h6V4M9 12l2 2 4-4M9 17h6"/></svg>',
   home: '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3 2.5 11h2.8v9.5h5.2v-6h3v6h5.2V11h2.8z"/></svg>',
   book: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5C4 4.7 4.7 4 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5zM20 5.5c0-.8-.7-1.5-1.5-1.5H13v16h5.5c.8 0 1.5-.7 1.5-1.5z"/></svg>',
   chart: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>',
@@ -196,7 +203,7 @@ function shellHTML(inner, plain) {
   if (!plain) {
     if (S.isTeacher) {
       var dis = S.editing ? ' disabled' : '';
-      items = it('area', 'exams', NI.home, 'ข้อสอบ', S.area === 'exams', dis) + it('area', 'live', NI.chart, 'ผลสด', S.area === 'live', dis) + it('area', 'student', NI.users, 'หน้านักเรียน', S.area === 'student', dis) +
+      items = it('area', 'exams', NI.home, 'ข้อสอบ', S.area === 'exams', dis) + it('area', 'live', NI.chart, 'ผลสด', S.area === 'live', dis) + it('area', 'book', NI.check, 'ตรวจงาน', S.area === 'book', dis) + it('area', 'student', NI.users, 'หน้านักเรียน', S.area === 'student', dis) +
         '<span class="snav-gap"></span>' + it('logout', '', NI.out, 'ออกจากระบบ');
     } else {
       items = it('home', '', NI.home, 'หน้าหลัก', S.area === 'student') + it('teacherlogin', '', NI.key, 'สำหรับผู้สอน', S.area === 'login');
@@ -207,7 +214,7 @@ function shellHTML(inner, plain) {
   if (S.isTeacher && !plain) {
     var d2 = S.editing ? ' disabled' : '';
     var tb = function (v, icon, l) { return '<button class="tab" data-act="area" data-v="' + v + '"' + (S.area === v ? ' aria-current="page"' : '') + d2 + '>' + icon + '<span>' + l + '</span></button>'; };
-    tabs = '<nav class="tabbar" aria-label="เมนูผู้สอน">' + tb('exams', NI.home, 'ข้อสอบ') + tb('live', NI.chart, 'ผลสด') + tb('student', NI.users, 'นักเรียน') + '</nav>';
+    tabs = '<nav class="tabbar" aria-label="เมนูผู้สอน">' + tb('exams', NI.home, 'ข้อสอบ') + tb('live', NI.chart, 'ผลสด') + tb('book', NI.check, 'ตรวจงาน') + tb('student', NI.users, 'นักเรียน') + '</nav>';
   }
   var who = S.isTeacher ? '<b>ผู้สอน</b><span>โหมดจัดการข้อสอบ</span>' : (whoOk() && S.step === 'list' ? '<b>' + esc(S.who.name) + '</b><span>เลขที่ ' + esc(S.who.no) + '</span>' : '<b>นักเรียน</b><span>ยังไม่ได้ลงชื่อ</span>');
   var act = plain ? '' : (S.isTeacher ? '<button class="pillbtn" data-act="logout">' + NI.out + '<span>ออก</span></button>' : (S.area === 'login' ? '' : '<button class="pillbtn" data-act="teacherlogin">' + NI.key + '<span>สำหรับผู้สอน</span></button>'));
@@ -773,6 +780,241 @@ function exportCsv() {
   } catch (e) { toast('ส่งออกไฟล์ไม่สำเร็จ'); }
 }
 
+
+/* ---------- teacher: ตรวจงาน (รายชื่อ งาน ข้อสอบ ส่ง/ไม่ส่ง) ---------- */
+var MARKS = { sent: ['ส่งแล้ว', '✓'], late: ['ส่งช้า', 'ช้า'], miss: ['ไม่ส่ง', '✗'] };
+var MARK_NEXT = { '': 'sent', sent: 'late', late: 'miss', miss: '' };
+async function loadBook() {
+  try {
+    var r = await api('teacher', { op: 'book', token: S.token });
+    var sig = JSON.stringify([r.roster, r.tasks, r.marks]);
+    S.book = { roster: r.roster || [], tasks: r.tasks || [], marks: r.marks || [] };
+    S.bookErr = '';
+    if (sig !== S.bookSig) { S.bookSig = sig; return true; }
+    return false;
+  } catch (e) {
+    S.bookErr = e.code === 'unknown_op' ? 'ยังไม่ได้อัปเดต Edge Function ให้รองรับการตรวจงาน' : /relation|does not exist|schema cache/.test(e.message || '') ? 'ยังไม่ได้รันไฟล์ migrate-book.sql ใน Supabase' : '';
+    return true;
+  }
+}
+function bookRooms() {
+  var set = {}; S.book.roster.forEach(function (r) { set[r.room] = 1; });
+  return Object.keys(set).sort(function (a, b) { return a.localeCompare(b, 'th', { numeric: true }); });
+}
+function bookStudents(room) {
+  return S.book.roster.filter(function (r) { return r.room === room; }).sort(function (a, b) { return Number(a.no) - Number(b.no); });
+}
+function bookTasks(room) { return S.book.tasks.filter(function (t) { return t.room === room; }); }
+function markOf(taskId, no) { for (var i = 0; i < S.book.marks.length; i++) { var m = S.book.marks[i]; if (m.task_id === taskId && String(m.no) === String(no)) return m.status; } return ''; }
+function bookExKey(room) { return 'hs.bookEx.' + room; }
+function bookExams(room) {
+  var all = examsSorted().slice().reverse(), sel = null;
+  try { sel = JSON.parse(get(bookExKey(room)) || 'null'); } catch (e) {}
+  if (!Array.isArray(sel)) return all;
+  return all.filter(function (e) { return sel.indexOf(e.id) >= 0; });
+}
+function normN(s) { return String(s || '').replace(/\s+/g, '').trim(); }
+function examCell(ex, st) {
+  var a = null;
+  for (var i = 0; i < S.attempts.length; i++) { var x = S.attempts[i]; if (x.examId === ex.id && String(x.no) === String(st.no)) { a = x; break; } }
+  if (!a) return { k: 'miss', t: 'ไม่ส่ง', x: 'ไม่ส่ง', sent: false };
+  var warn = normN(a.name) !== normN(st.name) ? 'ชื่อในข้อสอบ: ' + a.name : '';
+  if (a.status === 'submitted') {
+    var sc = scoreOf(a, ex, S.keys[ex.id]);
+    var txt = sc ? sc.s + '/' + sc.max : 'ส่งแล้ว';
+    return { k: 'sent', t: txt, x: txt, sent: true, warn: warn };
+  }
+  return { k: 'doing', t: a.status === 'waiting' ? 'ห้องรอ' : 'กำลังทำ', x: 'ยังไม่ส่ง', sent: false, warn: warn };
+}
+function bookMatrix(room) {
+  var studs = bookStudents(room), exs = bookExams(room), tks = bookTasks(room);
+  var cols = exs.map(function (e) { return { type: 'exam', id: e.id, title: e.title, ex: e }; }).concat(tks.map(function (t) { return { type: 'task', id: t.id, title: t.title, due: t.due, task: t }; }));
+  var rows = studs.map(function (st) {
+    var cells = cols.map(function (c) {
+      if (c.type === 'exam') return examCell(c.ex, st);
+      var m = markOf(c.id, st.no);
+      return { k: m || 'none', t: m ? MARKS[m][0] : '—', x: m ? MARKS[m][0] : '', sent: m === 'sent' || m === 'late', mark: m };
+    });
+    var sent = cells.filter(function (c) { return c.sent; }).length;
+    return { st: st, cells: cells, sent: sent };
+  });
+  return { studs: studs, cols: cols, rows: rows };
+}
+function bookHTML() {
+  var rooms = bookRooms();
+  if (!S.bookRoom || rooms.indexOf(S.bookRoom) < 0) S.bookRoom = rooms[0] || '';
+  var room = S.bookRoom;
+  var head = '<div class="head"><div><p class="hero-kick">ตรวจงาน</p><h1 style="margin-top:6px">ตรวจการส่ง<em>งานของนักเรียน</em></h1><p>รวมผลข้อสอบในระบบกับงานที่ครูติ๊กเอง แล้วส่งออกเป็น Excel หรือ PDF</p></div>' +
+    (room ? '<div class="bk-exp"><button class="btn ghost sm" data-act="bkxlsx">ดาวน์โหลด Excel</button><button class="btn accent sm" data-act="bkpdf">พิมพ์ / บันทึก PDF</button></div>' : '') + '</div>';
+  var err = S.bookErr ? '<div class="notice bad" style="margin-bottom:14px">' + esc(S.bookErr) + '</div>' : '';
+  var panel = bookPanelHTML(room);
+  if (!rooms.length && !S.bookPanel) {
+    return head + err + '<section class="card bk-empty">' + NI.users + '<h2>ยังไม่มีรายชื่อนักเรียน</h2><p class="muted">เริ่มจากสร้างห้องเรียนและวางรายชื่อจาก Excel หรือ Word ได้เลย</p><button class="btn accent" data-act="bkroster" data-v="new">' + NI.plus + 'เพิ่มรายชื่อห้องเรียน</button></section>';
+  }
+  var roomSel = rooms.length ? '<label class="field"><span>ห้องเรียน</span><select id="bk-room">' + rooms.map(function (r) { return '<option' + (r === room ? ' selected' : '') + '>' + esc(r) + '</option>'; }).join('') + '</select></label>' : '';
+  var tools = '<div class="toolbar">' + roomSel + '<div class="bk-tools"><button class="btn accent sm" data-act="bktask">' + NI.plus + 'เพิ่มงาน</button><button class="btn ghost sm" data-act="bkroster">แก้รายชื่อ</button><button class="btn ghost sm" data-act="bkroster" data-v="new">+ ห้องใหม่</button></div></div>';
+  if (S.bookPanel) return head + err + (rooms.length ? tools : '') + panel;
+  var all = examsSorted().slice().reverse(), selEx = bookExams(room).map(function (e) { return e.id; });
+  var chips = all.length ? '<div class="bk-chips"><span class="muted small">ข้อสอบที่นับรวม:</span>' + all.map(function (e) { var on = selEx.indexOf(e.id) >= 0; return '<button class="chip' + (on ? ' on' : '') + '" data-act="bkex" data-id="' + e.id + '" aria-pressed="' + on + '">' + (on ? '✓ ' : '') + esc(e.title) + '</button>'; }).join('') + '</div>' : '';
+  var M = bookMatrix(room);
+  if (!M.cols.length) return head + err + tools + chips + '<section class="card bk-empty">' + NI.check + '<h2>ยังไม่มีงานหรือข้อสอบในตาราง</h2><p class="muted">กด “เพิ่มงาน” เพื่อสร้างงานที่ต้องติ๊กส่ง หรือเลือกข้อสอบด้านบน</p></section>';
+  var th = '<th class="bk-no">เลขที่</th><th class="bk-name">ชื่อ-สกุล</th>' + M.cols.map(function (c) {
+    var sub = c.type === 'exam' ? '<span class="bk-tag ex">ข้อสอบ</span>' : '<span class="bk-tag">' + (c.due ? 'ส่ง ' + esc(fmtDue(c.due)) : 'งาน') + '</span>';
+    var act = c.type === 'task' ? '<span class="bk-colact"><button data-act="bkfill" data-id="' + c.id + '" data-v="sent" title="ติ๊กส่งแล้วให้ทุกคนที่ยังว่าง">✓ทั้งหมด</button><button data-act="bkfill" data-id="' + c.id + '" data-v="miss" title="ที่ยังว่างให้เป็นไม่ส่ง">ว่าง→✗</button><button data-act="bktask" data-id="' + c.id + '" title="แก้ไขงาน">แก้</button></span>' : '';
+    return '<th class="bk-col"><div class="bk-ct">' + esc(c.title) + '</div>' + sub + act + '</th>';
+  }).join('') + '<th class="bk-sum">ส่งแล้ว</th>';
+  var body = M.rows.map(function (r) {
+    return '<tr><td class="bk-no">' + esc(r.st.no) + '</td><td class="bk-name">' + esc(r.st.name) + '</td>' + r.cells.map(function (c, ci) {
+      var col = M.cols[ci];
+      if (col.type === 'exam') return '<td class="bk-c ' + c.k + '"' + (c.warn ? ' title="' + esc(c.warn) + '"' : '') + '><span class="bk-pill">' + esc(c.t) + (c.warn ? ' *' : '') + '</span></td>';
+      return '<td class="bk-c ' + c.k + '"><button class="bk-pill" data-act="bkmark" data-id="' + col.id + '" data-v="' + esc(r.st.no) + '" aria-label="' + esc(r.st.name) + ' ' + esc(col.title) + ': ' + c.t + ' (แตะเพื่อเปลี่ยน)">' + (c.mark ? MARKS[c.mark][1] + ' ' : '') + c.t + '</button></td>';
+    }).join('') + '<td class="bk-sum"><b>' + r.sent + '</b>/' + M.cols.length + '</td></tr>';
+  }).join('');
+  var foot = '<tr><td></td><td class="bk-name"><b>ส่งแล้ว (คน)</b></td>' + M.cols.map(function (c, ci) { var n = M.rows.filter(function (r) { return r.cells[ci].sent; }).length; return '<td class="bk-c"><b>' + n + '</b>/' + M.rows.length + '</td>'; }).join('') + '<td></td></tr>';
+  var miss = M.rows.filter(function (r) { return r.sent < M.cols.length; }).length;
+  var stats = '<div class="sumrow bk-stats"><div class="sum"><b>' + M.rows.length + '</b><span>นักเรียน</span></div><div class="sum"><b>' + M.cols.length + '</b><span>งาน + ข้อสอบ</span></div><div class="sum"><b>' + (M.rows.length - miss) + '</b><span>ส่งครบทุกงาน</span></div><div class="sum"><b style="color:var(--bad)">' + miss + '</b><span>ยังส่งไม่ครบ</span></div></div>';
+  var legend = '<p class="hint bk-legend">แตะช่องงานเพื่อเปลี่ยนสถานะ: ว่าง → ✓ ส่งแล้ว → ส่งช้า → ✗ ไม่ส่ง → ว่าง · ช่องข้อสอบดึงจากระบบอัตโนมัติ · * ชื่อที่กรอกในข้อสอบไม่ตรงกับรายชื่อ</p>';
+  return head + err + tools + chips + stats + legend + '<div class="tablewrap bk-scroll"><table class="tbl bk"><thead><tr>' + th + '</tr></thead><tbody>' + body + '</tbody><tfoot>' + foot + '</tfoot></table></div>';
+}
+function fmtDue(d) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || ''); if (!m) return d || ''; return new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }); }
+function bookPanelHTML(room) {
+  if (S.bookPanel === 'roster' || S.bookPanel === 'rosterNew') {
+    var isNew = S.bookPanel === 'rosterNew';
+    var txt = isNew ? '' : bookStudents(room).map(function (s) { return s.no + '\t' + s.name; }).join('\n');
+    var del = isNew ? '' : (S.confirmRoom ? '<button class="btn danger" data-act="bkroomdelyes">ยืนยันลบห้องนี้ทั้งหมด</button><button class="btn ghost" data-act="bkroomdelno">ยกเลิก</button>' : '<button class="btn danger" data-act="bkroomdel">ลบห้องนี้</button>');
+    return '<section class="card stack"><h2>' + (isNew ? 'เพิ่มห้องเรียนใหม่' : 'แก้รายชื่อห้อง ' + esc(room)) + '</h2>' +
+      '<label class="field"><span>ชื่อห้อง</span><input id="bk-roomname" type="text" maxlength="40" value="' + esc(isNew ? '' : room) + '" placeholder="เช่น ปวช.1/1"' + (isNew ? '' : ' readonly') + '></label>' +
+      '<label class="field"><span>รายชื่อ (บรรทัดละ 1 คน: เลขที่ ตามด้วยชื่อ-สกุล)</span><textarea id="bk-list" data-k="bk-list" rows="12" placeholder="1&#9;นายสมชาย ใจดี&#10;2&#9;นางสาวสุดา ใจงาม&#10;…คัดลอกสองคอลัมน์จาก Excel หรือ Word มาวางได้เลย">' + esc(txt) + '</textarea></label>' +
+      '<p class="hint" id="bk-count"></p>' + (S.bookErr ? '' : '') +
+      '<div class="row"><button class="btn accent" data-act="bkrostersave"' + (S.bookBusy ? ' disabled' : '') + '>' + (S.bookBusy ? 'กำลังบันทึก…' : 'บันทึกรายชื่อ') + '</button><button class="btn ghost" data-act="bkclose">ยกเลิก</button>' + del + '</div></section>';
+  }
+  if (S.bookPanel && S.bookPanel.indexOf('task') === 0) {
+    var tid = S.bookPanel.slice(5), t = null;
+    S.book.tasks.forEach(function (x) { if (x.id === tid) t = x; });
+    var delT = t ? (S.confirmTask === t.id ? '<button class="btn danger" data-act="bktaskdelyes" data-id="' + t.id + '">ยืนยันลบงาน</button><button class="btn ghost" data-act="bktaskdelno">ยกเลิก</button>' : '<button class="btn danger" data-act="bktaskdel" data-id="' + t.id + '">ลบงานนี้</button>') : '';
+    return '<section class="card stack"><h2>' + (t ? 'แก้ไขงาน' : 'เพิ่มงานใหม่') + ' · ห้อง ' + esc(room) + '</h2>' +
+      '<div class="row"><label class="field" style="flex:3 1 260px"><span>ชื่องาน</span><input id="bk-title" type="text" maxlength="120" value="' + esc(t ? t.title : '') + '" placeholder="เช่น ใบงานที่ 3.1 การวางแผนการออม"></label>' +
+      '<label class="field" style="flex:1 1 160px"><span>กำหนดส่ง (ไม่บังคับ)</span><input id="bk-due" type="date" value="' + esc(t && t.due ? t.due : '') + '"></label></div>' +
+      '<div class="row"><button class="btn accent" data-act="bktasksave" data-id="' + (t ? t.id : '') + '"' + (S.bookBusy ? ' disabled' : '') + '>' + (S.bookBusy ? 'กำลังบันทึก…' : 'บันทึกงาน') + '</button><button class="btn ghost" data-act="bkclose">ยกเลิก</button>' + delT + '</div></section>';
+  }
+  return '';
+}
+function parseRoster(text) {
+  var out = [], seen = {};
+  String(text || '').split(/\r?\n/).forEach(function (line) {
+    var parts = line.split(/\t|,|;|\s{2,}/).map(function (x) { return x.trim(); }).filter(Boolean);
+    if (!parts.length) return;
+    var no = null, name = [];
+    if (parts.length === 1) { var m = /^(\d{1,3})[\s.)]+(.+)$/.exec(parts[0]); if (!m) return; no = m[1]; name = [m[2]]; }
+    else parts.forEach(function (p) {
+      if (no === null && /^\d{1,3}\.?$/.test(p)) { no = p.replace('.', ''); return; }
+      if (/^[\d\-\s]+$/.test(p)) return;          // ข้ามรหัสนักเรียน
+      name.push(p);
+    });
+    if (no === null && parts.length > 1) { var m2 = /^(\d{1,3})[\s.)]+(.+)$/.exec(parts[0]); if (m2) { no = m2[1]; name = [m2[2]].concat(parts.slice(1)); } }
+    var nm = name.join(' ').replace(/\s+/g, ' ').trim();
+    if (no === null || !nm || seen[no]) return;
+    seen[no] = 1; out.push({ no: String(Number(no)), name: nm });
+  });
+  return out;
+}
+async function bookRosterSave() {
+  var roomEl = document.getElementById('bk-roomname'), room = roomEl ? roomEl.value.replace(/\s+/g, ' ').trim() : '';
+  var list = parseRoster((document.getElementById('bk-list') || {}).value);
+  if (!room) { toast('กรุณาใส่ชื่อห้อง'); return; }
+  if (!list.length) { toast('ไม่พบรายชื่อ ตรวจว่ามีเลขที่นำหน้าชื่อทุกบรรทัด'); return; }
+  S.bookBusy = true; render();
+  try { await api('teacher', { op: 'rosterSave', token: S.token, room: room, students: list }); S.bookRoom = room; S.bookPanel = null; toast('บันทึกรายชื่อ ' + list.length + ' คนแล้ว'); }
+  catch (e) { toast('บันทึกไม่สำเร็จ: ' + msgOf(e.code)); }
+  S.bookBusy = false; await loadBook(); render();
+}
+async function bookTaskSave(id) {
+  var title = ((document.getElementById('bk-title') || {}).value || '').trim(), due = (document.getElementById('bk-due') || {}).value || '';
+  if (!title) { toast('กรุณาใส่ชื่องาน'); return; }
+  var old = null; S.book.tasks.forEach(function (x) { if (x.id === id) old = x; });
+  S.bookBusy = true; render();
+  try { await api('teacher', { op: 'taskSave', token: S.token, task: { id: id || nid('t'), room: S.bookRoom, title: title, due: due, sort: old ? old.sort : Date.now() } }); S.bookPanel = null; toast('บันทึกงานแล้ว'); }
+  catch (e) { toast('บันทึกไม่สำเร็จ: ' + msgOf(e.code)); }
+  S.bookBusy = false; await loadBook(); render();
+}
+function setLocalMark(taskId, no, status) {
+  S.book.marks = S.book.marks.filter(function (m) { return !(m.task_id === taskId && String(m.no) === String(no)); });
+  if (status) S.book.marks.push({ task_id: taskId, no: String(no), room: S.bookRoom, status: status });
+}
+async function bookMark(taskId, no) {
+  var cur = markOf(taskId, no), nx = MARK_NEXT[cur];
+  setLocalMark(taskId, no, nx);
+  var y = window.scrollY, bs = document.querySelector('.bk-scroll'), bx = bs ? bs.scrollLeft : 0;
+  render(); window.scrollTo(0, y); var bs2 = document.querySelector('.bk-scroll'); if (bs2) bs2.scrollLeft = bx;
+  try { await api('teacher', { op: 'markSet', token: S.token, taskId: taskId, room: S.bookRoom, no: no, status: nx }); S.bookSig = ''; }
+  catch (e) { setLocalMark(taskId, no, cur); render(); toast('บันทึกไม่สำเร็จ ลองอีกครั้ง'); }
+}
+async function bookFill(taskId, status) {
+  var todo = bookStudents(S.bookRoom).filter(function (s) { return !markOf(taskId, s.no); });
+  if (!todo.length) { toast('ทุกคนมีสถานะแล้ว'); return; }
+  todo.forEach(function (s) { setLocalMark(taskId, s.no, status); }); render();
+  var fail = 0;
+  for (var i = 0; i < todo.length; i += 6) {
+    await Promise.all(todo.slice(i, i + 6).map(function (s) { return api('teacher', { op: 'markSet', token: S.token, taskId: taskId, room: S.bookRoom, no: s.no, status: status }).catch(function () { fail++; }); }));
+  }
+  await loadBook(); render();
+  toast(fail ? 'บันทึกไม่สำเร็จ ' + fail + ' คน ลองอีกครั้ง' : 'บันทึก ' + todo.length + ' คนแล้ว');
+}
+function bookToggleExam(id) {
+  var room = S.bookRoom, cur = bookExams(room).map(function (e) { return e.id; });
+  var i = cur.indexOf(id); if (i >= 0) cur.splice(i, 1); else cur.push(id);
+  put(bookExKey(room), JSON.stringify(cur)); render();
+}
+function bookTable(room) {
+  var M = bookMatrix(room);
+  var header = ['เลขที่', 'ชื่อ-สกุล'].concat(M.cols.map(function (c) { return (c.type === 'exam' ? '[ข้อสอบ] ' : '') + c.title + (c.due ? ' (ส่ง ' + fmtDue(c.due) + ')' : ''); })).concat(['ส่งแล้ว', 'ยังไม่ส่ง']);
+  var rows = M.rows.map(function (r) { return [Number(r.st.no), r.st.name].concat(r.cells.map(function (c) { return c.x === '' ? '-' : c.x; })).concat([r.sent, M.cols.length - r.sent]); });
+  var foot = ['', 'ส่งแล้ว (คน)'].concat(M.cols.map(function (c, ci) { return M.rows.filter(function (r) { return r.cells[ci].sent; }).length + '/' + M.rows.length; })).concat(['', '']);
+  return { M: M, header: header, rows: rows, foot: foot };
+}
+function loadScript(src) {
+  return new Promise(function (res, rej) { var s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+}
+async function bookExcel() {
+  var room = S.bookRoom, T = bookTable(room), today = new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' });
+  var fname = 'สรุปการส่งงาน-' + room.replace(/[\\/:*?"<>|]/g, '-');
+  var aoa = [['สรุปการส่งงาน ห้อง ' + room], ['ข้อมูล ณ วันที่ ' + today], [], T.header].concat(T.rows).concat([T.foot]);
+  try {
+    if (!window.XLSX) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+    var ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = T.header.map(function (h, i) { return { wch: i === 0 ? 7 : i === 1 ? 28 : Math.min(30, Math.max(10, String(h).length + 2)) }; });
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: Math.max(1, T.header.length - 1) } }];
+    var wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'สรุปการส่งงาน');
+    XLSX.writeFile(wb, fname + '.xlsx');
+    toast('ดาวน์โหลดไฟล์ Excel แล้ว');
+  } catch (e) {
+    var q = function (v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; };
+    var csv = aoa.map(function (r) { return r.map(q).join(','); }).join('\r\n');
+    var url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+    var a = document.createElement('a'); a.href = url; a.download = fname + '.csv'; document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 1000);
+    toast('ดาวน์โหลดเป็นไฟล์ CSV (เปิดด้วย Excel ได้)');
+  }
+}
+function bookPdf() {
+  var room = S.bookRoom, T = bookTable(room), M = T.M, today = new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' });
+  var miss = M.rows.filter(function (r) { return r.sent < M.cols.length; });
+  var cls = function (c) { return c.k === 'sent' ? 'ok' : c.k === 'late' ? 'late' : c.k === 'miss' ? 'no' : ''; };
+  var html = '<div class="pr-head"><div><h1>สรุปการส่งงาน ห้อง ' + esc(room) + '</h1><p>ข้อมูล ณ วันที่ ' + today + ' · นักเรียน ' + M.rows.length + ' คน · งานและข้อสอบ ' + M.cols.length + ' รายการ</p></div><div class="pr-box"><b>' + (M.rows.length - miss.length) + '</b> คนส่งครบ<br><b>' + miss.length + '</b> คนยังไม่ครบ</div></div>' +
+    '<table class="pr"><thead><tr>' + T.header.map(function (h) { return '<th>' + esc(h) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+    M.rows.map(function (r) { return '<tr><td>' + esc(r.st.no) + '</td><td class="nm">' + esc(r.st.name) + '</td>' + r.cells.map(function (c) { return '<td class="' + cls(c) + '">' + esc(c.t) + '</td>'; }).join('') + '<td><b>' + r.sent + '</b></td><td' + (M.cols.length - r.sent ? ' class="no"' : '') + '>' + (M.cols.length - r.sent) + '</td></tr>'; }).join('') +
+    '</tbody><tfoot><tr>' + T.foot.map(function (f) { return '<td>' + esc(f) + '</td>'; }).join('') + '</tr></tfoot></table>' +
+    (miss.length ? '<h2>รายชื่อนักเรียนที่ยังส่งไม่ครบ</h2><ol class="pr-miss">' + miss.map(function (r) { var left = M.cols.filter(function (c, ci) { return !r.cells[ci].sent; }).map(function (c) { return c.title; }); return '<li><b>เลขที่ ' + esc(r.st.no) + ' ' + esc(r.st.name) + '</b> — ' + esc(left.join(', ')) + '</li>'; }).join('') + '</ol>' : '<h2>นักเรียนส่งงานครบทุกคน</h2>') +
+    '<p class="pr-sign">ลงชื่อ ........................................ ครูผู้สอน</p>';
+  var box = document.getElementById('printArea');
+  if (!box) { box = document.createElement('div'); box.id = 'printArea'; document.body.appendChild(box); }
+  box.innerHTML = html;
+  document.body.classList.add('printing');
+  var done = function () { document.body.classList.remove('printing'); window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
+  setTimeout(function () { window.print(); }, 50);
+}
+
 /* ---------- teacher: exams list + editor ---------- */
 function examsHTML() {
   var ex = examsSorted(), openN = 0, doing = 0, done = 0;
@@ -913,7 +1155,7 @@ function logout() {
 function act(a, b) {
   var id = b.getAttribute('data-id'), qi = +b.getAttribute('data-qi'), ci = +b.getAttribute('data-ci'), R = S.run, D = S.editing;
   switch (a) {
-    case 'area': if (S.editing) return; if (S.run && S.run.att.status === 'submitted') endRun(); S.area = b.getAttribute('data-v'); S.detail = null; render(); break;
+    case 'area': if (S.editing) return; if (S.run && S.run.att.status === 'submitted') endRun(); S.area = b.getAttribute('data-v'); S.detail = null; render(); if (S.area === 'book') loadBook().then(function () { render(); }); break;
     case 'start': startAttempt(id, false); break;
     case 'join': joinLobby(id); break;
     case 'lobby': S.lobby = id; render(); break;
@@ -953,6 +1195,27 @@ function act(a, b) {
     case 'resetno': S.confirmReset = null; renderLiveParts(); break;
     case 'resetyes': resetAttempt(b.getAttribute('data-uid')); break;
     case 'csv': exportCsv(); break;
+    case 'bkroster': S.bookPanel = b.getAttribute('data-v') === 'new' ? 'rosterNew' : 'roster'; S.confirmRoom = false; render(); window.scrollTo(0, 0); break;
+    case 'bktask': S.bookPanel = 'task:' + (id || ''); S.confirmTask = null; render(); window.scrollTo(0, 0); break;
+    case 'bkclose': S.bookPanel = null; render(); break;
+    case 'bkrostersave': bookRosterSave(); break;
+    case 'bktasksave': bookTaskSave(id); break;
+    case 'bkmark': bookMark(id, b.getAttribute('data-v')); break;
+    case 'bkfill': bookFill(id, b.getAttribute('data-v')); break;
+    case 'bkex': bookToggleExam(id); break;
+    case 'bkxlsx': bookExcel(); break;
+    case 'bkpdf': bookPdf(); break;
+    case 'bkroomdel': S.confirmRoom = true; render(); break;
+    case 'bkroomdelno': S.confirmRoom = false; render(); break;
+    case 'bkroomdelyes':
+      api('teacher', { op: 'roomDelete', token: S.token, room: S.bookRoom }).then(function () { S.bookPanel = null; S.bookRoom = ''; toast('ลบห้องแล้ว'); return loadBook(); }, function () { toast('ลบไม่สำเร็จ'); }).then(function () { render(); });
+      break;
+    case 'bktaskdel': S.confirmTask = id; render(); break;
+    case 'bktaskdelno': S.confirmTask = null; render(); break;
+    case 'bktaskdelyes':
+      api('teacher', { op: 'taskDelete', token: S.token, taskId: id }).then(function () { S.bookPanel = null; toast('ลบงานแล้ว'); return loadBook(); }, function () { toast('ลบไม่สำเร็จ'); }).then(function () { render(); });
+      break;
+
     case 'newexam': S.editing = newDraft(); S.editErr = null; render(); window.scrollTo(0, 0); break;
     case 'edit': S.editing = draftFrom(id); S.editErr = null; render(); window.scrollTo(0, 0); break;
     case 'del': S.confirmDel = id; render(); break;
@@ -994,6 +1257,7 @@ app.addEventListener('change', function (e) {
     var y = window.scrollY; render(); window.scrollTo(0, y);
     setSave('saving'); queueFlush(1200);
   }
+  if (t.id === 'bk-room') { S.bookRoom = t.value; render(); }
   if (t.id === 'sel-exam') { S.examSel = t.value; S.detail = null; renderLiveParts(); }
   if (t.getAttribute('data-k') === 'ans') { var D = S.editing; if (D && t.checked) D.questions[+t.getAttribute('data-qi')].ans = +t.getAttribute('data-ci'); }
 });
@@ -1003,6 +1267,7 @@ app.addEventListener('input', function (e) {
     if (k === 'who-name') S.who.name = t.value; else S.who.no = t.value;
     put('omr.who', JSON.stringify(S.who)); updateIdGate(); return;
   }
+  if (t.id === 'bk-list') { var c = document.getElementById('bk-count'); if (c) c.textContent = 'อ่านได้ ' + parseRoster(t.value).length + ' คน'; return; }
   var D = S.editing; if (!D) return;
   var qi = +t.getAttribute('data-qi'), ci = +t.getAttribute('data-ci');
   switch (k) {
