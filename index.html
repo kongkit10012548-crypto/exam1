@@ -458,7 +458,12 @@ button.bk-pill:hover{border-color:var(--accent)}
 .fm-file{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;border:1px dashed var(--rule-2);border-radius:14px;background:var(--surface-2)}
 .fm-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--rule)}
 .fm-t{min-width:0;overflow-wrap:anywhere}
-.fm-row select{width:150px;flex:none;min-height:40px;padding:6px 10px;font-size:15px}
+.fm-row{flex-wrap:wrap}
+.fm-in{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+.fm-mini{display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--muted)}
+.fm-mini input{width:130px;min-height:40px;padding:6px 10px;font-size:15px}
+.fm-full input{width:80px}
+.fm-row select{width:130px;flex:none;min-height:40px;padding:6px 10px;font-size:15px}
 #printArea{display:none}
 @media print{
   @page{size:A4 landscape;margin:10mm}
@@ -484,6 +489,6 @@ button.bk-pill:hover{border-color:var(--accent)}
   #printArea .pr-sign{margin-top:28px;text-align:right}
 }
 </style>
-<script src="app.js?v=20261123c"></script>
+<script src="app.js?v=20261123d"></script>
 </body>
 </html>
